@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Camera,
   Coffee,
@@ -13,6 +13,8 @@ import {
   MapPin,
   Plus,
   X,
+  Mic,
+  Square,
 } from "lucide-react";
 
 const STORAGE_KEY = "daily-frames-v4";
@@ -88,6 +90,131 @@ const baseInputStyle = {
   boxSizing: "border-box",
   fontFamily: "inherit",
 };
+
+function useSpeechToText({ lang = "en-CA", onFinalTranscript }) {
+  const recognitionRef = useRef(null);
+  const shouldRestartRef = useRef(false);
+
+  const [isSupported, setIsSupported] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [interimTranscript, setInterimTranscript] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setIsSupported(false);
+      return;
+    }
+
+    setIsSupported(true);
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = lang;
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      setError("");
+    };
+
+    recognition.onresult = (event) => {
+      let finalText = "";
+      let interimText = "";
+
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const transcript = event.results[i][0]?.transcript || "";
+        if (event.results[i].isFinal) {
+          finalText += transcript;
+        } else {
+          interimText += transcript;
+        }
+      }
+
+      setInterimTranscript(interimText.trim());
+
+      if (finalText.trim()) {
+        onFinalTranscript(finalText.trim());
+      }
+    };
+
+    recognition.onerror = (event) => {
+      if (event.error === "aborted") return;
+
+      if (event.error === "not-allowed") {
+        setError("Microphone access was blocked.");
+      } else if (event.error === "no-speech") {
+        setError("No speech detected.");
+      } else if (event.error === "audio-capture") {
+        setError("No microphone was found.");
+      } else {
+        setError("Voice dictation had an issue.");
+      }
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      setInterimTranscript("");
+
+      if (shouldRestartRef.current) {
+        try {
+          recognition.start();
+        } catch {
+          // ignore restart errors
+        }
+      }
+    };
+
+    recognitionRef.current = recognition;
+
+    return () => {
+      shouldRestartRef.current = false;
+      try {
+        recognition.stop();
+      } catch {
+        // ignore cleanup errors
+      }
+    };
+  }, [lang, onFinalTranscript]);
+
+  function startListening() {
+    if (!recognitionRef.current) return;
+    shouldRestartRef.current = true;
+    setError("");
+
+    try {
+      recognitionRef.current.start();
+    } catch {
+      // already started
+    }
+  }
+
+  function stopListening() {
+    if (!recognitionRef.current) return;
+    shouldRestartRef.current = false;
+
+    try {
+      recognitionRef.current.stop();
+    } catch {
+      // ignore stop errors
+    }
+  }
+
+  return {
+    isSupported,
+    isListening,
+    interimTranscript,
+    error,
+    startListening,
+    stopListening,
+  };
+}
 
 function Field({ label, children }) {
   return (
@@ -217,6 +344,35 @@ function EmptyState({ title, body }) {
   );
 }
 
+function DictationButton({ isListening, onClick, disabled }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "10px 12px",
+        borderRadius: 999,
+        border: `1px solid ${isListening ? theme.black : theme.border}`,
+        background: isListening ? theme.black : theme.white,
+        color: isListening ? theme.white : theme.text,
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.6 : 1,
+        fontSize: 13,
+        fontWeight: 600,
+        fontFamily: "inherit",
+        transition: "all 0.18s ease",
+      }}
+    >
+      {isListening ? <Square size={14} /> : <Mic size={14} />}
+      {isListening ? "Listening…" : "Dictate"}
+    </button>
+  );
+}
+
 function EntryForm({ onSave, onCancel, initialEntry, defaultDate }) {
   const [type, setType] = useState(initialEntry?.type || "Ride");
   const [date, setDate] = useState(
@@ -232,8 +388,35 @@ function EntryForm({ onSave, onCancel, initialEntry, defaultDate }) {
   const showDuration = ["Ride", "Walk"].includes(type);
   const showRating = type === "Cafe";
 
+  const appendTranscriptToNote = useCallback((spokenText) => {
+    setNote((prev) => {
+      const trimmedPrev = prev.trim();
+      if (!trimmedPrev) return spokenText;
+      return `${prev}${/[.!?]$/.test(trimmedPrev) ? " " : " "}${spokenText}`;
+    });
+  }, []);
+
+  const {
+    isSupported,
+    isListening,
+    interimTranscript,
+    error,
+    startListening,
+    stopListening,
+  } = useSpeechToText({
+    lang: "en-CA",
+    onFinalTranscript: appendTranscriptToNote,
+  });
+
+  useEffect(() => {
+    return () => {
+      stopListening();
+    };
+  }, [stopListening]);
+
   function handleSubmit(e) {
     e.preventDefault();
+    stopListening();
     if (!title.trim()) return;
 
     onSave({
@@ -248,6 +431,11 @@ function EntryForm({ onSave, onCancel, initialEntry, defaultDate }) {
       rating: rating.trim(),
       note: note.trim(),
     });
+  }
+
+  function handleCancel() {
+    stopListening();
+    onCancel();
   }
 
   return (
@@ -343,7 +531,45 @@ function EntryForm({ onSave, onCancel, initialEntry, defaultDate }) {
         </div>
       )}
 
-      <Field label="Notes">
+      <div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+            marginBottom: 8,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 12,
+              color: theme.subtext,
+              fontWeight: 600,
+              letterSpacing: "0.02em",
+            }}
+          >
+            Notes
+          </div>
+
+          {isSupported ? (
+            <DictationButton
+              isListening={isListening}
+              onClick={isListening ? stopListening : startListening}
+            />
+          ) : (
+            <div
+              style={{
+                fontSize: 12,
+                color: theme.subtext,
+              }}
+            >
+              Voice dictation works best in Chrome or Edge
+            </div>
+          )}
+        </div>
+
         <textarea
           value={note}
           onChange={(e) => setNote(e.target.value)}
@@ -351,13 +577,69 @@ function EntryForm({ onSave, onCancel, initialEntry, defaultDate }) {
           placeholder="A short note, cafe detail, ride feeling, or photo memory"
           style={{ ...baseInputStyle, resize: "vertical", minHeight: 110 }}
         />
-      </Field>
+
+        {(isListening || interimTranscript || error) && (
+          <div
+            style={{
+              marginTop: 10,
+              display: "grid",
+              gap: 8,
+            }}
+          >
+            {isListening && (
+              <div
+                style={{
+                  fontSize: 12,
+                  color: theme.subtext,
+                  background: theme.panel2,
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: 12,
+                  padding: "10px 12px",
+                }}
+              >
+                Mic is on — speak naturally.
+              </div>
+            )}
+
+            {interimTranscript && (
+              <div
+                style={{
+                  fontSize: 13,
+                  color: theme.subtext,
+                  background: theme.white,
+                  border: `1px dashed ${theme.borderStrong}`,
+                  borderRadius: 12,
+                  padding: "10px 12px",
+                  fontStyle: "italic",
+                }}
+              >
+                {interimTranscript}
+              </div>
+            )}
+
+            {error && (
+              <div
+                style={{
+                  fontSize: 12,
+                  color: theme.accent,
+                  background: theme.white,
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: 12,
+                  padding: "10px 12px",
+                }}
+              >
+                {error}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         <ActionButton type="submit">
           {initialEntry ? "Save changes" : "Add entry"}
         </ActionButton>
-        <ActionButton onClick={onCancel}>Cancel</ActionButton>
+        <ActionButton onClick={handleCancel}>Cancel</ActionButton>
       </div>
     </form>
   );
@@ -581,7 +863,8 @@ export default function App() {
     setShowForm(true);
   }
 
-  const isMobile = window.innerWidth < 768;
+  const isMobile =
+    typeof window !== "undefined" ? window.innerWidth < 768 : false;
 
   return (
     <div
@@ -643,7 +926,7 @@ export default function App() {
                   marginBottom: 10,
                 }}
               >
-                Today + History
+                Today + History + Live
               </div>
 
               <div
