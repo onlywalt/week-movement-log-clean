@@ -322,7 +322,7 @@ function EmptyState({ title, body }) {
         style={{
           fontSize: 18,
           fontWeight: 600,
-          color: theme.text,
+          color: theme.subtext,
           marginBottom: 8,
           letterSpacing: "-0.01em",
         }}
@@ -333,7 +333,7 @@ function EmptyState({ title, body }) {
         style={{
           fontSize: 14,
           lineHeight: 1.7,
-          color: theme.subtext,
+          color: "#a39a8f",
           maxWidth: 420,
           margin: "0 auto",
         }}
@@ -879,7 +879,7 @@ export default function App() {
         style={{
           maxWidth: 1120,
           margin: "0 auto",
-          color: theme.text,
+          color: theme.subtext,
           fontFamily:
             'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         }}
@@ -926,7 +926,7 @@ export default function App() {
                   marginBottom: 10,
                 }}
               >
-                Today + History + Live
+                Today + History + Live test 2
               </div>
 
               <div
@@ -1061,7 +1061,7 @@ export default function App() {
                     style={{
                       fontSize: 24,
                       fontWeight: 600,
-                      color: theme.text,
+                      color: theme.subtext,
                       letterSpacing: "-0.01em",
                       marginBottom: 4,
                     }}
@@ -1119,7 +1119,7 @@ export default function App() {
                   style={{
                     fontSize: 24,
                     fontWeight: 600,
-                    color: theme.text,
+                    color: theme.subtext,
                     letterSpacing: "-0.01em",
                     marginBottom: 4,
                   }}
@@ -1219,7 +1219,7 @@ export default function App() {
                   style={{
                     fontSize: 24,
                     fontWeight: 600,
-                    color: theme.text,
+                    color: theme.subtext,
                     letterSpacing: "-0.01em",
                     marginBottom: 4,
                   }}
