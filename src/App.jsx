@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Coffee,
   Bike,
@@ -12,8 +12,6 @@ import {
   MapPin,
   Plus,
   X,
-  Mic,
-  Square,
   Image as ImageIcon,
 } from "lucide-react";
 
@@ -129,134 +127,6 @@ const baseInputStyle = {
   boxSizing: "border-box",
   fontFamily: "inherit",
 };
-
-function useSpeechToText({ lang = "en-CA", onFinalTranscript }) {
-  const recognitionRef = useRef(null);
-  const shouldRestartRef = useRef(false);
-
-  const [isSupported, setIsSupported] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [interimTranscript, setInterimTranscript] = useState("");
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      setIsSupported(false);
-      return;
-    }
-
-    const isMobileDevice =
-      /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-
-    setIsSupported(true);
-
-    const recognition = new SpeechRecognition();
-    recognition.lang = lang;
-    recognition.continuous = !isMobileDevice;
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
-
-    recognition.onstart = () => {
-      setIsListening(true);
-      setError("");
-    };
-
-    recognition.onresult = (event) => {
-      let finalText = "";
-      let interimText = "";
-
-      for (let i = event.resultIndex; i < event.results.length; i += 1) {
-        const transcript = event.results[i][0]?.transcript || "";
-        if (event.results[i].isFinal) {
-          finalText += transcript;
-        } else {
-          interimText += transcript;
-        }
-      }
-
-      setInterimTranscript(interimText.trim());
-
-      if (finalText.trim()) {
-        onFinalTranscript(finalText.trim());
-      }
-    };
-
-    recognition.onerror = (event) => {
-      if (event.error === "aborted") return;
-
-      if (event.error === "not-allowed") {
-        setError("Microphone access was blocked.");
-      } else if (event.error === "no-speech") {
-        setError("No speech detected.");
-      } else if (event.error === "audio-capture") {
-        setError("No microphone was found.");
-      } else {
-        setError("Voice dictation had an issue.");
-      }
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-      setInterimTranscript("");
-
-      if (shouldRestartRef.current && !isMobileDevice) {
-        try {
-          recognition.start();
-        } catch {
-          // ignore restart errors
-        }
-      }
-    };
-
-    recognitionRef.current = recognition;
-
-    return () => {
-      shouldRestartRef.current = false;
-      try {
-        recognition.stop();
-      } catch {
-        // ignore cleanup errors
-      }
-    };
-  }, [lang, onFinalTranscript]);
-
-  function startListening() {
-    if (!recognitionRef.current) return;
-    shouldRestartRef.current = true;
-    setError("");
-
-    try {
-      recognitionRef.current.start();
-    } catch {
-      // already started
-    }
-  }
-
-  function stopListening() {
-    if (!recognitionRef.current) return;
-    shouldRestartRef.current = false;
-
-    try {
-      recognitionRef.current.stop();
-    } catch {
-      // ignore stop errors
-    }
-  }
-
-  return {
-    isSupported,
-    isListening,
-    interimTranscript,
-    error,
-    startListening,
-    stopListening,
-  };
-}
 
 function Field({ label, children }) {
   return (
@@ -386,35 +256,6 @@ function EmptyState({ title, body }) {
   );
 }
 
-function DictationButton({ isListening, onClick, disabled }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "10px 12px",
-        borderRadius: 999,
-        border: `1px solid ${isListening ? theme.black : theme.border}`,
-        background: isListening ? theme.black : theme.white,
-        color: isListening ? theme.white : theme.text,
-        cursor: disabled ? "not-allowed" : "pointer",
-        opacity: disabled ? 0.6 : 1,
-        fontSize: 13,
-        fontWeight: 600,
-        fontFamily: "inherit",
-        transition: "all 0.18s ease",
-      }}
-    >
-      {isListening ? <Square size={14} /> : <Mic size={14} />}
-      {isListening ? "Listening…" : "Dictate"}
-    </button>
-  );
-}
-
 function PhotoFrame({ src, alt, background = theme.white, maxHeight = 520 }) {
   return (
     <div
@@ -467,51 +308,6 @@ function EntryForm({ onSave, onCancel, initialEntry, defaultDate }) {
   const showDuration = ["Ride", "Walk"].includes(type);
   const showRating = type === "Cafe";
 
-  const appendTranscriptToNote = useCallback((spokenText) => {
-    setNote((prev) => {
-      const trimmedPrev = prev.trim();
-      if (!trimmedPrev) return spokenText;
-      return `${prev} ${spokenText}`;
-    });
-  }, []);
-
-  const {
-    isSupported,
-    isListening,
-    interimTranscript,
-    error,
-    startListening,
-    stopListening,
-  } = useSpeechToText({
-    lang: "en-CA",
-    onFinalTranscript: appendTranscriptToNote,
-  });
-
-  function flushInterimTranscript() {
-    if (interimTranscript.trim()) {
-      appendTranscriptToNote(interimTranscript.trim());
-    }
-  }
-
-  function handleDictationToggle() {
-    if (isListening) {
-      flushInterimTranscript();
-      stopListening();
-    } else {
-      startListening();
-    }
-  }
-
-  useEffect(() => {
-    return () => {
-      try {
-        stopListening();
-      } catch {
-        // ignore cleanup errors
-      }
-    };
-  }, [stopListening]);
-
   async function handlePhotoChange(e) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -543,13 +339,6 @@ function EntryForm({ onSave, onCancel, initialEntry, defaultDate }) {
 
   function handleSubmit(e) {
     e.preventDefault();
-
-    if (isListening) {
-      flushInterimTranscript();
-    }
-
-    stopListening();
-
     if (!title.trim()) return;
 
     onSave({
@@ -569,11 +358,6 @@ function EntryForm({ onSave, onCancel, initialEntry, defaultDate }) {
   }
 
   function handleCancel() {
-    if (isListening) {
-      flushInterimTranscript();
-    }
-
-    stopListening();
     onCancel();
   }
 
@@ -771,21 +555,14 @@ function EntryForm({ onSave, onCancel, initialEntry, defaultDate }) {
             Notes
           </div>
 
-          {isSupported ? (
-            <DictationButton
-              isListening={isListening}
-              onClick={handleDictationToggle}
-            />
-          ) : (
-            <div
-              style={{
-                fontSize: 12,
-                color: theme.subtext,
-              }}
-            >
-              Voice dictation works best in Chrome or Edge
-            </div>
-          )}
+          <div
+            style={{
+              fontSize: 12,
+              color: theme.subtext,
+            }}
+          >
+            Voice notes coming soon
+          </div>
         </div>
 
         <textarea
@@ -795,62 +572,6 @@ function EntryForm({ onSave, onCancel, initialEntry, defaultDate }) {
           placeholder="A short note, cafe detail, ride feeling, or photo memory"
           style={{ ...baseInputStyle, resize: "vertical", minHeight: 110 }}
         />
-
-        {(isListening || interimTranscript || error) && (
-          <div
-            style={{
-              marginTop: 10,
-              display: "grid",
-              gap: 8,
-            }}
-          >
-            {isListening && (
-              <div
-                style={{
-                  fontSize: 12,
-                  color: theme.subtext,
-                  background: theme.panel2,
-                  border: `1px solid ${theme.border}`,
-                  borderRadius: 12,
-                  padding: "10px 12px",
-                }}
-              >
-                Mic is on — speak naturally.
-              </div>
-            )}
-
-            {interimTranscript && (
-              <div
-                style={{
-                  fontSize: 13,
-                  color: theme.subtext,
-                  background: theme.white,
-                  border: `1px dashed ${theme.borderStrong}`,
-                  borderRadius: 12,
-                  padding: "10px 12px",
-                  fontStyle: "italic",
-                }}
-              >
-                {interimTranscript}
-              </div>
-            )}
-
-            {error && (
-              <div
-                style={{
-                  fontSize: 12,
-                  color: theme.accent,
-                  background: theme.white,
-                  border: `1px solid ${theme.border}`,
-                  borderRadius: 12,
-                  padding: "10px 12px",
-                }}
-              >
-                {error}
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -1098,7 +819,11 @@ export default function App() {
     <div
       style={{
         minHeight: "100vh",
-        background: `linear-gradient(180deg, ${theme.bg} 0%, #efe8dd 100%)`,
+        backgroundColor: theme.bg,
+        backgroundImage: `
+          radial-gradient(circle at 1px 1px, #d6cdc0 1px, transparent 0)
+        `,
+        backgroundSize: "14px 14px",
         padding: "32px 18px",
         boxSizing: "border-box",
       }}
@@ -1154,7 +879,7 @@ export default function App() {
                   marginBottom: 10,
                 }}
               >
-                Today + History + Test 6
+                Today + History + BIKE
               </div>
 
               <div
@@ -1353,7 +1078,7 @@ export default function App() {
                   }}
                 >
                   Recent dates
-                </div>
+                  </div>
                 <div style={{ fontSize: 13, color: theme.subtext, lineHeight: 1.6 }}>
                   Quick jump into your archive.
                 </div>
