@@ -473,17 +473,28 @@ function EntryForm({ onSave, onCancel, initialEntry, defaultDate }) {
     });
   }, []);
 
-  const {
-    isSupported,
-    isListening,
-    interimTranscript,
-    error,
-    startListening,
-    stopListening,
-  } = useSpeechToText({
-    lang: "en-CA",
-    onFinalTranscript: appendTranscriptToNote,
-  });
+const {
+  isSupported,
+  isListening,
+  interimTranscript,
+  error,
+  startListening,
+  stopListening,
+} = useSpeechToText({
+  lang: "en-CA",
+  onFinalTranscript: appendTranscriptToNote,
+});
+
+function handleDictationToggle() {
+  if (isListening) {
+    if (interimTranscript.trim()) {
+      appendTranscriptToNote(interimTranscript.trim());
+    }
+    stopListening();
+  } else {
+    startListening();
+  }
+}
 
   useEffect(() => {
     return () => {
@@ -749,9 +760,9 @@ function EntryForm({ onSave, onCancel, initialEntry, defaultDate }) {
 
           {isSupported ? (
             <DictationButton
-              isListening={isListening}
-              onClick={isListening ? stopListening : startListening}
-            />
+  isListening={isListening}
+  onClick={handleDictationToggle}
+/>
           ) : (
             <div
               style={{
@@ -1130,7 +1141,7 @@ export default function App() {
                   marginBottom: 10,
                 }}
               >
-                Today + History 
+                Today + History + Test v3
               </div>
 
               <div
