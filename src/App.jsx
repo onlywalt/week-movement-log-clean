@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Camera,
   Coffee,
   Bike,
   Footprints,
@@ -469,36 +468,44 @@ function EntryForm({ onSave, onCancel, initialEntry, defaultDate }) {
     setNote((prev) => {
       const trimmedPrev = prev.trim();
       if (!trimmedPrev) return spokenText;
-      return `${prev}${/[.!?]$/.test(trimmedPrev) ? " " : " "}${spokenText}`;
+      return `${prev} ${spokenText}`;
     });
   }, []);
 
-const {
-  isSupported,
-  isListening,
-  interimTranscript,
-  error,
-  startListening,
-  stopListening,
-} = useSpeechToText({
-  lang: "en-CA",
-  onFinalTranscript: appendTranscriptToNote,
-});
+  const {
+    isSupported,
+    isListening,
+    interimTranscript,
+    error,
+    startListening,
+    stopListening,
+  } = useSpeechToText({
+    lang: "en-CA",
+    onFinalTranscript: appendTranscriptToNote,
+  });
 
-function handleDictationToggle() {
-  if (isListening) {
+  function flushInterimTranscript() {
     if (interimTranscript.trim()) {
       appendTranscriptToNote(interimTranscript.trim());
     }
-    stopListening();
-  } else {
-    startListening();
   }
-}
+
+  function handleDictationToggle() {
+    if (isListening) {
+      flushInterimTranscript();
+      stopListening();
+    } else {
+      startListening();
+    }
+  }
 
   useEffect(() => {
     return () => {
-      stopListening();
+      try {
+        stopListening();
+      } catch {
+        // ignore cleanup errors
+      }
     };
   }, [stopListening]);
 
@@ -533,7 +540,13 @@ function handleDictationToggle() {
 
   function handleSubmit(e) {
     e.preventDefault();
+
+    if (isListening) {
+      flushInterimTranscript();
+    }
+
     stopListening();
+
     if (!title.trim()) return;
 
     onSave({
@@ -553,6 +566,10 @@ function handleDictationToggle() {
   }
 
   function handleCancel() {
+    if (isListening) {
+      flushInterimTranscript();
+    }
+
     stopListening();
     onCancel();
   }
@@ -701,16 +718,9 @@ function handleDictationToggle() {
                 ref={fileInputRef}
                 type="file"
                 accept="image/*"
-                capture="environment"
                 onChange={handlePhotoChange}
                 style={{ display: "none" }}
-              /><input
-  ref={fileInputRef}
-  type="file"
-  accept="image/*"
-  onChange={handlePhotoChange}
-  style={{ display: "none" }}
-/>
+              />
             </label>
 
             {photo && (
@@ -760,9 +770,9 @@ function handleDictationToggle() {
 
           {isSupported ? (
             <DictationButton
-  isListening={isListening}
-  onClick={handleDictationToggle}
-/>
+              isListening={isListening}
+              onClick={handleDictationToggle}
+            />
           ) : (
             <div
               style={{
@@ -1141,7 +1151,7 @@ export default function App() {
                   marginBottom: 10,
                 }}
               >
-                Today + History + Test v3
+                Today + History + Test v
               </div>
 
               <div
