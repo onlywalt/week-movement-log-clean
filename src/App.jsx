@@ -15,6 +15,7 @@ import {
   X,
   Mic,
   Square,
+  Image as ImageIcon,
 } from "lucide-react";
 
 const STORAGE_KEY = "daily-frames-v4";
@@ -23,7 +24,6 @@ const activityOptions = [
   { value: "Ride", icon: Bike },
   { value: "Walk", icon: Footprints },
   { value: "Cafe", icon: Coffee },
-  { value: "Photo", icon: Camera },
   { value: "Journal", icon: BookOpen },
 ];
 
@@ -76,6 +76,46 @@ function loadEntries() {
 
 function saveEntries(entries) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+}
+
+async function compressImage(file, maxSize = 1600, quality = 0.82) {
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+  const img = await new Promise((resolve, reject) => {
+    const image = new window.Image();
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = dataUrl;
+  });
+
+  let width = img.width;
+  let height = img.height;
+
+  if (width > maxSize || height > maxSize) {
+    if (width > height) {
+      height = Math.round((height * maxSize) / width);
+      width = maxSize;
+    } else {
+      width = Math.round((width * maxSize) / height);
+      height = maxSize;
+    }
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas not supported");
+
+  ctx.drawImage(img, 0, 0, width, height);
+
+  return canvas.toDataURL("image/jpeg", quality);
 }
 
 const baseInputStyle = {
@@ -373,6 +413,39 @@ function DictationButton({ isListening, onClick, disabled }) {
   );
 }
 
+function PhotoFrame({ src, alt, background = theme.white, maxHeight = 520 }) {
+  return (
+    <div
+      style={{
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background,
+        border: `1px solid ${theme.border}`,
+        borderRadius: 18,
+        overflow: "hidden",
+        padding: 6,
+        boxSizing: "border-box",
+      }}
+    >
+      <img
+        src={src}
+        alt={alt}
+        style={{
+          width: "auto",
+          height: "auto",
+          maxWidth: "100%",
+          maxHeight,
+          objectFit: "contain",
+          display: "block",
+          borderRadius: 10,
+        }}
+      />
+    </div>
+  );
+}
+
 function EntryForm({ onSave, onCancel, initialEntry, defaultDate }) {
   const [type, setType] = useState(initialEntry?.type || "Ride");
   const [date, setDate] = useState(
@@ -383,6 +456,10 @@ function EntryForm({ onSave, onCancel, initialEntry, defaultDate }) {
   const [duration, setDuration] = useState(initialEntry?.duration || "");
   const [rating, setRating] = useState(initialEntry?.rating || "");
   const [note, setNote] = useState(initialEntry?.note || "");
+  const [photo, setPhoto] = useState(initialEntry?.photo || "");
+  const [photoName, setPhotoName] = useState(initialEntry?.photoName || "");
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const fileInputRef = useRef(null);
 
   const showPlace = type === "Cafe";
   const showDuration = ["Ride", "Walk"].includes(type);
@@ -414,6 +491,35 @@ function EntryForm({ onSave, onCancel, initialEntry, defaultDate }) {
     };
   }, [stopListening]);
 
+  async function handlePhotoChange(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("Please choose an image file.");
+      return;
+    }
+
+    try {
+      setPhotoBusy(true);
+      const compressed = await compressImage(file);
+      setPhoto(compressed);
+      setPhotoName(file.name || "Photo");
+    } catch {
+      alert("Could not load this photo.");
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+
+  function removePhoto() {
+    setPhoto("");
+    setPhotoName("");
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }
+
   function handleSubmit(e) {
     e.preventDefault();
     stopListening();
@@ -430,6 +536,8 @@ function EntryForm({ onSave, onCancel, initialEntry, defaultDate }) {
       duration: duration.trim(),
       rating: rating.trim(),
       note: note.trim(),
+      photo,
+      photoName,
     });
   }
 
@@ -530,6 +638,86 @@ function EntryForm({ onSave, onCancel, initialEntry, defaultDate }) {
           )}
         </div>
       )}
+
+      <div>
+        <div
+          style={{
+            fontSize: 12,
+            marginBottom: 8,
+            color: theme.subtext,
+            fontWeight: 600,
+            letterSpacing: "0.02em",
+          }}
+        >
+          Photo
+        </div>
+
+        <div
+          style={{
+            border: `1px solid ${theme.border}`,
+            background: theme.white,
+            borderRadius: 18,
+            padding: 14,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+              alignItems: "center",
+              marginBottom: photo ? 14 : 0,
+            }}
+          >
+            <label
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "10px 12px",
+                borderRadius: 999,
+                border: `1px solid ${theme.border}`,
+                background: theme.panel2,
+                color: theme.text,
+                cursor: photoBusy ? "wait" : "pointer",
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              <ImageIcon size={14} />
+              {photoBusy ? "Preparing photo..." : photo ? "Replace photo" : "Add photo"}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handlePhotoChange}
+                style={{ display: "none" }}
+              />
+            </label>
+
+            {photo && (
+              <ActionButton onClick={removePhoto}>Remove photo</ActionButton>
+            )}
+          </div>
+
+          {photo && (
+            <div style={{ display: "grid", gap: 8 }}>
+              <PhotoFrame
+                src={photo}
+                alt={photoName || "Entry photo preview"}
+                background={theme.panel}
+                maxHeight={420}
+              />
+              {photoName && (
+                <div style={{ fontSize: 12, color: theme.subtext }}>
+                  {photoName}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
 
       <div>
         <div
@@ -740,7 +928,7 @@ function EntryCard({ entry, onEdit, onDelete }) {
               gap: 14,
               color: theme.subtext,
               fontSize: 13,
-              marginBottom: entry.note ? 14 : 0,
+              marginBottom: entry.note || entry.photo ? 14 : 0,
             }}
           >
             {entry.place && (
@@ -767,10 +955,20 @@ function EntryCard({ entry, onEdit, onDelete }) {
                 fontSize: 14,
                 lineHeight: 1.7,
                 whiteSpace: "pre-wrap",
+                marginBottom: entry.photo ? 14 : 0,
               }}
             >
               {entry.note}
             </div>
+          )}
+
+          {entry.photo && (
+            <PhotoFrame
+              src={entry.photo}
+              alt={entry.photoName || entry.title || "Entry photo"}
+              background="#f8f6f2"
+              maxHeight={360}
+            />
           )}
         </div>
 
