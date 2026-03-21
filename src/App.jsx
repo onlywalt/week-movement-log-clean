@@ -922,8 +922,7 @@ export default function App() {
                   maxWidth: 680,
                 }}
               >
-                A calm riding-and-photo journal with Leica restraint and Rapha
-                warmth. Quick to capture today, easy to browse later.
+                Ride the day. Keep the moment
               </div>
             </div>
 
