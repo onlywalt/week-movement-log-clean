@@ -693,7 +693,13 @@ function EntryForm({ onSave, onCancel, initialEntry, defaultDate }) {
                 capture="environment"
                 onChange={handlePhotoChange}
                 style={{ display: "none" }}
-              />
+              /><input
+  ref={fileInputRef}
+  type="file"
+  accept="image/*"
+  onChange={handlePhotoChange}
+  style={{ display: "none" }}
+/>
             </label>
 
             {photo && (
