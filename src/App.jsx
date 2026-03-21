@@ -1124,7 +1124,7 @@ export default function App() {
                   marginBottom: 10,
                 }}
               >
-                Today + History + Live test 2
+                Today + History 
               </div>
 
               <div
