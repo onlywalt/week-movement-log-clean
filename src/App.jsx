@@ -157,7 +157,7 @@ function TypeButton({ active, icon: Icon, label, onClick }) {
         alignItems: "center",
         gap: 8,
         padding: "10px 14px",
-        borderRadius: 14,
+        borderRadius: 999,
         border: `1px solid ${active ? theme.borderStrong : theme.border}`,
         background: active ? theme.panel2 : theme.panel,
         color: theme.text,
@@ -165,6 +165,8 @@ function TypeButton({ active, icon: Icon, label, onClick }) {
         fontSize: 14,
         fontWeight: active ? 600 : 500,
         fontFamily: "inherit",
+        flex: "0 0 auto",
+        whiteSpace: "nowrap",
       }}
     >
       <Icon size={15} />
@@ -365,20 +367,36 @@ function EntryForm({ onSave, onCancel, initialEntry, defaultDate }) {
     <form onSubmit={handleSubmit} style={{ display: "grid", gap: 18 }}>
       <div
         style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 10,
+          position: "relative",
+          marginLeft: -2,
+          marginRight: -2,
         }}
       >
-        {activityOptions.map((item) => (
-          <TypeButton
-            key={item.value}
-            active={type === item.value}
-            icon={item.icon}
-            label={item.value}
-            onClick={() => setType(item.value)}
-          />
-        ))}
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            overflowX: "auto",
+            overflowY: "hidden",
+            whiteSpace: "nowrap",
+            WebkitOverflowScrolling: "touch",
+            scrollbarWidth: "none",
+            msOverflowStyle: "none",
+            paddingBottom: 4,
+            paddingInline: 2,
+          }}
+          className="activity-scroll-row"
+        >
+          {activityOptions.map((item) => (
+            <TypeButton
+              key={item.value}
+              active={type === item.value}
+              icon={item.icon}
+              label={item.value}
+              onClick={() => setType(item.value)}
+            />
+          ))}
+        </div>
       </div>
 
       <div
@@ -752,6 +770,20 @@ export default function App() {
     saveEntries(entries);
   }, [entries]);
 
+  useEffect(() => {
+    const styleId = "hide-activity-scrollbar";
+    if (document.getElementById(styleId)) return;
+
+    const style = document.createElement("style");
+    style.id = styleId;
+    style.innerHTML = `
+      .activity-scroll-row::-webkit-scrollbar {
+        display: none;
+      }
+    `;
+    document.head.appendChild(style);
+  }, []);
+
   const todayEntries = useMemo(() => {
     return entries
       .filter((entry) => entry.date === todayString())
@@ -821,9 +853,9 @@ export default function App() {
         minHeight: "100vh",
         backgroundColor: theme.bg,
         backgroundImage: `
-          radial-gradient(circle at 1px 1px, #d6cdc0 1px, transparent 0)
+          radial-gradient(circle at 1px 1px, #d6cdc0 0.8px, transparent 0)
         `,
-        backgroundSize: "14px 14px",
+        backgroundSize: "16px 16px",
         padding: "32px 18px",
         boxSizing: "border-box",
       }}
@@ -879,7 +911,7 @@ export default function App() {
                   marginBottom: 10,
                 }}
               >
-                Today + History + BIKE
+                Today + History + Ride
               </div>
 
               <div
@@ -1078,7 +1110,7 @@ export default function App() {
                   }}
                 >
                   Recent dates
-                  </div>
+                </div>
                 <div style={{ fontSize: 13, color: theme.subtext, lineHeight: 1.6 }}>
                   Quick jump into your archive.
                 </div>
