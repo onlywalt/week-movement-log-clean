@@ -150,11 +150,14 @@ function useSpeechToText({ lang = "en-CA", onFinalTranscript }) {
       return;
     }
 
+    const isMobileDevice =
+      /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
     setIsSupported(true);
 
     const recognition = new SpeechRecognition();
     recognition.lang = lang;
-    recognition.continuous = true;
+    recognition.continuous = !isMobileDevice;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
 
@@ -201,7 +204,7 @@ function useSpeechToText({ lang = "en-CA", onFinalTranscript }) {
       setIsListening(false);
       setInterimTranscript("");
 
-      if (shouldRestartRef.current) {
+      if (shouldRestartRef.current && !isMobileDevice) {
         try {
           recognition.start();
         } catch {
@@ -1151,7 +1154,7 @@ export default function App() {
                   marginBottom: 10,
                 }}
               >
-                Today + History + Test v
+                Today + History + Test 6
               </div>
 
               <div
