@@ -14,7 +14,7 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 
-const STORAGE_KEY = "daily-frame-capture-mode-v1";
+const STORAGE_KEY = "daily-frame-capture-mode-v2";
 
 const TYPE_META = {
   Ride: { label: "RIDE", icon: Bike },
@@ -497,7 +497,7 @@ export default function App() {
                       </label>
                     )}
 
-                    <div className="border-t border-[#e3dbcf] p-4 space-y-4">
+                    <div className="border-t border-[#e3dbcf] p-4">
                       <input
                         ref={fileInputRef}
                         type="file"
@@ -505,23 +505,6 @@ export default function App() {
                         onChange={handleImageUpload}
                         className="block w-full text-[13px] text-[#6c604f] file:mr-4 file:rounded-full file:border file:border-[#cdbfa8] file:bg-[#ece4d6] file:px-4 file:py-2 file:text-[11px] file:uppercase file:tracking-[0.22em] file:text-[#241e18]"
                       />
-
-                      <div className="flex gap-3 pt-1">
-                        <button
-                          type="submit"
-                          className="flex-1 rounded-full border border-[#b8aa94] bg-[#ece4d6] px-5 py-3 text-[11px] uppercase tracking-[0.28em] text-[#241e18] transition hover:bg-[#e6dccb]"
-                        >
-                          {form.id ? "Save entry" : "Add entry"}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={resetForm}
-                          className="rounded-full border border-[#d8cfc2] bg-[#f7f2e8] px-5 py-3 text-[11px] uppercase tracking-[0.28em] text-[#7a6f5f] transition hover:bg-[#eee7da]"
-                        >
-                          Clear
-                        </button>
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -590,6 +573,23 @@ export default function App() {
                       placeholder="Add place or location"
                       className="w-full rounded-[18px] border border-[#ddd4c8] bg-[#f8f4ec] px-4 py-3 text-[15px] text-[#2a241d] outline-none transition placeholder:text-[#af9f8a] focus:border-[#bcae97]"
                     />
+                  </div>
+
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      type="submit"
+                      className="flex-1 rounded-full border border-[#b8aa94] bg-[#ece4d6] px-5 py-3 text-[11px] uppercase tracking-[0.28em] text-[#241e18] transition hover:bg-[#e6dccb]"
+                    >
+                      {form.id ? "Save entry" : "Add entry"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={resetForm}
+                      className="rounded-full border border-[#d8cfc2] bg-[#f7f2e8] px-5 py-3 text-[11px] uppercase tracking-[0.28em] text-[#7a6f5f] transition hover:bg-[#eee7da]"
+                    >
+                      Clear
+                    </button>
                   </div>
                 </div>
               </form>
