@@ -1,5 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  fetchEntries,
+  addEntry,
+  updateEntry,
+  deleteEntry,
+} from "./lib/firestoreEntries";
+import {
   Bike,
   Footprints,
   Coffee,
@@ -188,26 +194,56 @@ export default function App() {
 
   const fileInputRef = useRef(null);
 
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) setEntries(parsed);
-    } catch (error) {
-      console.error("Failed to load entries:", error);
-    }
-  }, []);
+useEffect(() => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+  } catch (error) {
+    console.error("Failed to save entries:", error);
+    alert("This photo is too large to save on this device. Try a smaller photo.");
+  }
+}, [entries]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
-    } catch (error) {
-      console.error("Failed to save entries:", error);
-      alert("This photo is too large to save on this device. Try a smaller photo.");
-    }
-  }, [entries]);
+ async function handleSubmit(e) {
+  e.preventDefault();
 
+  const cleanTitle = form.title.trim();
+  const cleanPlace = form.place.trim();
+  const cleanNote = form.note.trim();
+
+  if (!cleanTitle && !cleanPlace && !cleanNote) return;
+
+  const payload = {
+    ...form,
+    title: cleanTitle,
+    place: cleanPlace,
+    note: cleanNote,
+  };
+
+  try {
+    if (form.id) {
+      // UPDATE
+      await updateEntry(form.id, payload);
+
+      setEntries((prev) =>
+        prev.map((item) =>
+          item.id === form.id ? { ...item, ...payload } : item
+        )
+      );
+    } else {
+      // ADD
+      const id = await addEntry(payload);
+
+      setEntries((prev) => [{ id, ...payload }, ...prev]);
+    }
+
+    setForm(makeEmptyForm(form.type, form.date));
+    setEditorOpen(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  } catch (error) {
+    console.error("Failed to submit entry:", error);
+    alert("This entry could not be saved.");
+  }
+}
   useEffect(() => {
     setForm((prev) => ({
       ...prev,
@@ -380,10 +416,17 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function handleDelete(id) {
-    setEntries((prev) => prev.filter((item) => item.id !== id));
+async function handleDelete(id) {
+  try {
+    await deleteEntry(id); // 🔥 delete from Firebase
+
+    setEntries((prev) => prev.filter((item) => item.id !== id)); // update UI
+
     if (form.id === id) resetForm();
+  } catch (error) {
+    console.error("Failed to delete:", error);
   }
+}
 
   function placeholderTitle(type) {
     if (type === "Ride") return "Morning loop";
