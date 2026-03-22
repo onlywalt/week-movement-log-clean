@@ -14,7 +14,7 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 
-const STORAGE_KEY = "daily-frame-capture-mode-v3";
+const STORAGE_KEY = "daily-frame-capture-mode-v4";
 
 const TYPE_META = {
   Ride: { label: "RIDE", icon: Bike },
@@ -338,8 +338,8 @@ export default function App() {
         <PaperDotBackground />
 
         <div className="relative mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 pb-14 pt-6 sm:px-6 lg:px-8">
-          <header className="mb-6 rounded-[28px] border border-[#ddd5c8] bg-[#f8f4ec]/94 px-5 py-6 shadow-[0_10px_35px_rgba(81,64,40,0.05)] sm:px-7 sm:py-7">
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <header className="mb-6 rounded-[22px] border border-[#ddd5c8] bg-[#f8f4ec]/94 px-5 py-5 shadow-[0_10px_35px_rgba(81,64,40,0.05)] sm:px-7 sm:py-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="min-w-0">
                 <h1 className="mt-1 text-[18px] font-semibold tracking-[0.02em] text-[#3a332b] sm:text-[20px]">
                   Daily Frame
@@ -348,6 +348,10 @@ export default function App() {
                 <div className="mt-1 text-[9px] uppercase tracking-[0.36em] text-[#7a6b58] sm:text-[10px]">
                   RIDE | TIME | PLACE
                 </div>
+
+                <p className="mt-3 text-[12.5px] italic text-[#8a7c69]">
+                  Ride the day. Keep the moment.
+                </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -376,10 +380,6 @@ export default function App() {
                 </button>
               </div>
             </div>
-
-            <p className="mt-4 text-[12.5px] italic text-[#8a7c69]">
-              Ride the day. Keep the moment.
-            </p>
           </header>
 
           <section className="mb-5 rounded-[24px] border border-[#ddd5c8] bg-[#f8f4ec]/94 p-4 shadow-[0_8px_30px_rgba(81,64,40,0.04)] sm:p-5">
@@ -440,9 +440,9 @@ export default function App() {
           </section>
 
           {editorOpen && (
-            <section className="mb-6 rounded-[28px] border border-[#ddd5c8] bg-[#fbf8f2]/96 p-4 shadow-[0_10px_35px_rgba(81,64,40,0.05)] sm:p-5">
+            <section className="mb-6 rounded-[28px] border border-[#ddd5c8] bg-[#fbf8f2]/96 p-4 sm:p-5 shadow-[0_10px_35px_rgba(81,64,40,0.05)]">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.32em] text-[#8f816f]">
+                <div className="flex items-center gap-2 text-[9px] uppercase tracking-[0.28em] text-[#8f816f]">
                   <ActiveIcon size={14} strokeWidth={1.8} />
                   <span>{form.id ? `Edit ${meta.label}` : meta.label}</span>
                 </div>
@@ -459,7 +459,7 @@ export default function App() {
 
               <form
                 onSubmit={handleSubmit}
-                className="grid gap-5 lg:grid-cols-[1fr_0.95fr]"
+                className="grid gap-5 lg:grid-cols-[1.08fr_0.92fr]"
               >
                 <div className="space-y-4">
                   <div>
@@ -480,7 +480,7 @@ export default function App() {
                       Note
                     </label>
                     <textarea
-                      rows={6}
+                      rows={5}
                       value={form.note}
                       onChange={(e) => handleChange("note", e.target.value)}
                       placeholder="What happened, what you noticed, what you want to remember."
@@ -560,9 +560,9 @@ export default function App() {
                             <p className="text-[14px] leading-6 text-[#7a6e5f]">
                               Add a photo if this moment needs one.
                             </p>
-                            <span className="rounded-full border border-[#cdbfa8] bg-[#ece4d6] px-4 py-2 text-[11px] uppercase tracking-[0.22em] text-[#241e18]">
-                              Choose image
-                            </span>
+                        <span className="text-[10px] uppercase tracking-[0.26em] text-[#9a8c78]">
+  Optional photo
+</span>
                           </div>
                         </label>
                       )}
@@ -580,7 +580,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="lg:col-span-2 flex gap-3 pt-1">
+                <div className="flex gap-3 pt-1 lg:col-span-2">
                   <button
                     type="submit"
                     className="flex-1 rounded-full border border-[#b8aa94] bg-[#ece4d6] px-5 py-3 text-[11px] uppercase tracking-[0.28em] text-[#241e18] transition hover:bg-[#e6dccb]"
