@@ -14,25 +14,13 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 
-const STORAGE_KEY = "daily-frame-entries-v3";
+const STORAGE_KEY = "daily-frame-capture-mode-v1";
 
 const TYPE_META = {
-  Ride: {
-    label: "RIDE",
-    icon: Bike,
-  },
-  Walk: {
-    label: "WALK",
-    icon: Footprints,
-  },
-  Cafe: {
-    label: "CAFE",
-    icon: Coffee,
-  },
-  Notes: {
-    label: "NOTES",
-    icon: BookOpen,
-  },
+  Ride: { label: "RIDE", icon: Bike },
+  Walk: { label: "WALK", icon: Footprints },
+  Cafe: { label: "CAFE", icon: Coffee },
+  Notes: { label: "NOTES", icon: BookOpen },
 };
 
 function todayString() {
@@ -261,6 +249,7 @@ export default function App() {
     const targetDate = view === "today" ? todayString() : selectedDate;
     setForm(makeEmptyForm(type, targetDate));
     setEditorOpen(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function handleImageUpload(event) {
@@ -282,6 +271,13 @@ export default function App() {
       ...prev,
       image: "",
     }));
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function resetForm() {
+    setForm(
+      makeEmptyForm(form.type, view === "today" ? todayString() : selectedDate)
+    );
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -324,14 +320,19 @@ export default function App() {
   function handleDelete(id) {
     setEntries((prev) => prev.filter((item) => item.id !== id));
     if (form.id === id) {
-      setForm(makeEmptyForm("Ride", view === "today" ? todayString() : selectedDate));
+      resetForm();
     }
   }
 
-  const formLabelTitle =
-    form.type === "Cafe" ? "Title / Cafe" : form.type === "Notes" ? "Title" : "Title";
+  function placeholderTitle(type) {
+    if (type === "Ride") return "Morning loop";
+    if (type === "Walk") return "After work walk";
+    if (type === "Cafe") return "Cafe name";
+    return "Quick title";
+  }
 
-  const formLabelPlace = form.type === "Notes" ? "Place (optional)" : "Place";
+  const meta = TYPE_META[form.type] || TYPE_META.Notes;
+  const ActiveIcon = meta.icon;
 
   return (
     <div className="min-h-screen bg-[#f4f0e8] text-[#2a241d]">
@@ -340,19 +341,15 @@ export default function App() {
 
         <div className="relative mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 pb-14 pt-6 sm:px-6 lg:px-8">
           <header className="mb-6 rounded-[28px] border border-[#ddd5c8] bg-[#f8f4ec]/94 px-5 py-6 shadow-[0_10px_35px_rgba(81,64,40,0.05)] sm:px-7 sm:py-7">
-            <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0">
-              <h1 className="mt-1 text-[18px] font-semibold tracking-[0.02em] text-[#3a332b] sm:text-[20px]">
-  Daily Frame
-</h1>
+                <h1 className="mt-1 text-[18px] font-semibold tracking-[0.02em] text-[#3a332b] sm:text-[20px]">
+                  Daily Frame
+                </h1>
 
                 <div className="mt-1 text-[9px] uppercase tracking-[0.36em] text-[#7a6b58] sm:text-[10px]">
                   RIDE | TIME | PLACE
                 </div>
-
-                <p className="mt-4 text-[13px] italic text-[#8a7c69]">
-                  Ride the day. Keep the moment.
-                </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -381,14 +378,18 @@ export default function App() {
                 </button>
               </div>
             </div>
+
+            <p className="mt-4 text-[12.5px] italic text-[#8a7c69]">
+              Ride the day. Keep the moment.
+            </p>
           </header>
 
           <section className="mb-5 rounded-[24px] border border-[#ddd5c8] bg-[#f8f4ec]/94 p-4 shadow-[0_8px_30px_rgba(81,64,40,0.04)] sm:p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex min-w-0 gap-2 overflow-x-auto pb-1">
                 {Object.keys(TYPE_META).map((type) => {
-                  const meta = TYPE_META[type];
-                  const Icon = meta.icon;
+                  const typeMeta = TYPE_META[type];
+                  const Icon = typeMeta.icon;
                   const active = form.type === type && editorOpen;
 
                   return (
@@ -441,13 +442,11 @@ export default function App() {
           </section>
 
           {editorOpen && (
-            <section className="mb-6 rounded-[28px] border border-[#ddd5c8] bg-[#fbf8f2]/96 p-4 shadow-[0_10px_35px_rgba(81,64,40,0.05)] sm:p-6">
-              <div className="mb-6 flex items-start justify-between gap-3">
-                <div>
-                
-                  <h2 className="mt-3 text-[20px] font-medium tracking-[-0.01em] text-[#2a241d]">
-                    {form.id ? "Edit entry" : `New ${form.type.toLowerCase()} entry`}
-                  </h2>
+            <section className="mb-6 rounded-[28px] border border-[#ddd5c8] bg-[#fbf8f2]/96 p-4 shadow-[0_10px_35px_rgba(81,64,40,0.05)] sm:p-5 lg:p-6">
+              <div className="mb-5 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.32em] text-[#8f816f]">
+                  <ActiveIcon size={14} strokeWidth={1.8} />
+                  <span>{form.id ? `Edit ${meta.label}` : meta.label}</span>
                 </div>
 
                 <button
@@ -462,32 +461,95 @@ export default function App() {
 
               <form
                 onSubmit={handleSubmit}
-                className="grid gap-6 lg:grid-cols-[1.12fr_0.88fr]"
+                className="grid gap-5 lg:grid-cols-[0.95fr_1.05fr]"
               >
-                <div className="space-y-4">
+                <div className="order-1 lg:order-2">
+                  <div className="overflow-hidden rounded-[22px] border border-[#ddd4c8] bg-[#f7f2e8]">
+                    {form.image ? (
+                      <div className="relative aspect-[4/3] w-full">
+                        <img
+                          src={form.image}
+                          alt="Preview"
+                          className="h-full w-full object-cover"
+                        />
+                        <div className="absolute right-3 top-3">
+                          <button
+                            type="button"
+                            onClick={clearImage}
+                            className="rounded-full border border-white/60 bg-white/85 p-2 text-[#5f5447] shadow-sm transition hover:bg-white"
+                            title="Remove image"
+                          >
+                            <X size={14} strokeWidth={1.8} />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <label className="flex aspect-[4/3] cursor-pointer items-center justify-center p-6 text-center text-[#8d806f]">
+                        <div className="flex max-w-[260px] flex-col items-center gap-3">
+                          <ImageIcon size={28} strokeWidth={1.7} />
+                          <p className="text-[14px] leading-6 text-[#7a6e5f]">
+                            Add a photo first and capture the moment.
+                          </p>
+                          <span className="rounded-full border border-[#cdbfa8] bg-[#ece4d6] px-4 py-2 text-[11px] uppercase tracking-[0.22em] text-[#241e18]">
+                            Choose image
+                          </span>
+                        </div>
+                      </label>
+                    )}
+
+                    <div className="border-t border-[#e3dbcf] p-4 space-y-4">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        className="block w-full text-[13px] text-[#6c604f] file:mr-4 file:rounded-full file:border file:border-[#cdbfa8] file:bg-[#ece4d6] file:px-4 file:py-2 file:text-[11px] file:uppercase file:tracking-[0.22em] file:text-[#241e18]"
+                      />
+
+                      <div className="flex gap-3 pt-1">
+                        <button
+                          type="submit"
+                          className="flex-1 rounded-full border border-[#b8aa94] bg-[#ece4d6] px-5 py-3 text-[11px] uppercase tracking-[0.28em] text-[#241e18] transition hover:bg-[#e6dccb]"
+                        >
+                          {form.id ? "Save entry" : "Add entry"}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={resetForm}
+                          className="rounded-full border border-[#d8cfc2] bg-[#f7f2e8] px-5 py-3 text-[11px] uppercase tracking-[0.28em] text-[#7a6f5f] transition hover:bg-[#eee7da]"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="order-2 space-y-4 lg:order-1">
                   <div>
                     <label className="mb-2 block text-[10px] uppercase tracking-[0.32em] text-[#8f816f]">
-                      {formLabelTitle}
+                      Title
                     </label>
                     <input
                       type="text"
                       value={form.title}
                       onChange={(e) => handleChange("title", e.target.value)}
-                      placeholder="Give this moment a title"
+                      placeholder={placeholderTitle(form.type)}
                       className="w-full rounded-[18px] border border-[#ddd4c8] bg-[#f8f4ec] px-4 py-3 text-[15px] text-[#2a241d] outline-none transition placeholder:text-[#af9f8a] focus:border-[#bcae97]"
                     />
                   </div>
 
                   <div>
                     <label className="mb-2 block text-[10px] uppercase tracking-[0.32em] text-[#8f816f]">
-                      {formLabelPlace}
+                      Note
                     </label>
-                    <input
-                      type="text"
-                      value={form.place}
-                      onChange={(e) => handleChange("place", e.target.value)}
-                      placeholder="Add place or location"
-                      className="w-full rounded-[18px] border border-[#ddd4c8] bg-[#f8f4ec] px-4 py-3 text-[15px] text-[#2a241d] outline-none transition placeholder:text-[#af9f8a] focus:border-[#bcae97]"
+                    <textarea
+                      rows={6}
+                      value={form.note}
+                      onChange={(e) => handleChange("note", e.target.value)}
+                      placeholder="What happened, what you noticed, what you want to remember."
+                      className="w-full rounded-[18px] border border-[#ddd4c8] bg-[#f8f4ec] px-4 py-3 text-[15px] leading-7 text-[#2a241d] outline-none transition placeholder:text-[#af9f8a] focus:border-[#bcae97]"
                     />
                   </div>
 
@@ -519,87 +581,15 @@ export default function App() {
 
                   <div>
                     <label className="mb-2 block text-[10px] uppercase tracking-[0.32em] text-[#8f816f]">
-                      Note
+                      Place
                     </label>
-                    <textarea
-                      rows={7}
-                      value={form.note}
-                      onChange={(e) => handleChange("note", e.target.value)}
-                      placeholder="Add the detail, the weather, the feeling, the small thing worth remembering."
-                      className="w-full rounded-[18px] border border-[#ddd4c8] bg-[#f8f4ec] px-4 py-3 text-[15px] leading-7 text-[#2a241d] outline-none transition placeholder:text-[#af9f8a] focus:border-[#bcae97]"
+                    <input
+                      type="text"
+                      value={form.place}
+                      onChange={(e) => handleChange("place", e.target.value)}
+                      placeholder="Add place or location"
+                      className="w-full rounded-[18px] border border-[#ddd4c8] bg-[#f8f4ec] px-4 py-3 text-[15px] text-[#2a241d] outline-none transition placeholder:text-[#af9f8a] focus:border-[#bcae97]"
                     />
-                  </div>
-
-                  <div className="flex flex-wrap gap-3 pt-1">
-                    <button
-                      type="submit"
-                      className="rounded-full border border-[#b8aa94] bg-[#ece4d6] px-5 py-2.5 text-[11px] uppercase tracking-[0.28em] text-[#241e18] transition hover:bg-[#e6dccb]"
-                    >
-                      {form.id ? "Save entry" : "Add entry"}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setForm(
-                          makeEmptyForm(
-                            form.type,
-                            view === "today" ? todayString() : selectedDate
-                          )
-                        );
-                        if (fileInputRef.current) fileInputRef.current.value = "";
-                      }}
-                      className="rounded-full border border-[#d8cfc2] bg-[#f7f2e8] px-5 py-2.5 text-[11px] uppercase tracking-[0.28em] text-[#7a6f5f] transition hover:bg-[#eee7da]"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-[10px] uppercase tracking-[0.32em] text-[#8f816f]">
-                    Image
-                  </label>
-
-                  <div className="overflow-hidden rounded-[22px] border border-[#ddd4c8] bg-[#f7f2e8]">
-                    {form.image ? (
-                      <div className="relative aspect-[4/3] w-full">
-                        <img
-                          src={form.image}
-                          alt="Preview"
-                          className="h-full w-full object-cover"
-                        />
-                        <div className="absolute right-3 top-3">
-                          <button
-                            type="button"
-                            onClick={clearImage}
-                            className="rounded-full border border-white/60 bg-white/85 p-2 text-[#5f5447] shadow-sm transition hover:bg-white"
-                            title="Remove image"
-                          >
-                            <X size={14} strokeWidth={1.8} />
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex aspect-[4/3] items-center justify-center p-6 text-center text-[#8d806f]">
-                        <div className="flex max-w-[260px] flex-col items-center gap-3">
-                          <ImageIcon size={26} strokeWidth={1.7} />
-                          <p className="text-[14px] leading-6 text-[#7a6e5f]">
-                            Add a photo to give the entry that contact-sheet feel.
-                          </p>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="border-t border-[#e3dbcf] p-4">
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        onChange={handleImageUpload}
-                        className="block w-full text-[13px] text-[#6c604f] file:mr-4 file:rounded-full file:border file:border-[#cdbfa8] file:bg-[#ece4d6] file:px-4 file:py-2 file:text-[11px] file:uppercase file:tracking-[0.22em] file:text-[#241e18]"
-                      />
-                    </div>
                   </div>
                 </div>
               </form>
@@ -609,13 +599,10 @@ export default function App() {
           <section className="mb-4">
             <div className="mb-4 flex items-end justify-between gap-3">
               <div>
-                <div className="text-[10px] uppercase tracking-[0.34em] text-[#948674]">
-                  Archive view
-                </div>
-                <h2 className="mt-1 text-[18px] font-light leading-none tracking-[0.03em] text-[#241e18]">
+                <h2 className="mt-1 text-[13px] font-medium uppercase tracking-[0.28em] text-[#6f6354]">
                   {view === "today"
-                    ? "Today"
-                    : formatDateLabel(selectedDate) || "History"}
+                    ? formatDateLabel(todayString())
+                    : formatDateLabel(selectedDate) || "—"}
                 </h2>
               </div>
 
@@ -643,9 +630,7 @@ export default function App() {
                   No entries yet
                 </p>
                 <p className="mt-3 text-[16px] text-[#6f6354]">
-                  {view === "today"
-                    ? "Start with Ride, Walk, Cafe, or Notes above."
-                    : "No entries for this date."}
+                  Start with Ride, Walk, Cafe, or Notes above.
                 </p>
               </div>
             )}
