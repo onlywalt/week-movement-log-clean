@@ -253,18 +253,47 @@ export default function App() {
   }
 
   function handleImageUpload(event) {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  const file = event.target.files?.[0];
+  if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = () => {
+  const img = new Image();
+  const reader = new FileReader();
+
+  reader.onload = () => {
+    img.onload = () => {
+      const maxWidth = 1600;
+      const maxHeight = 1600;
+
+      let { width, height } = img;
+
+      if (width > maxWidth || height > maxHeight) {
+        const ratio = Math.min(maxWidth / width, maxHeight / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      ctx.drawImage(img, 0, 0, width, height);
+
+      const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.72);
+
       setForm((prev) => ({
         ...prev,
-        image: String(reader.result || ""),
+        image: compressedDataUrl,
       }));
     };
-    reader.readAsDataURL(file);
-  }
+
+    img.src = String(reader.result || "");
+  };
+
+  reader.readAsDataURL(file);
+}
 
   function clearImage() {
     setForm((prev) => ({
