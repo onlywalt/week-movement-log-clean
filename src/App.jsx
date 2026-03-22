@@ -440,8 +440,8 @@ export default function App() {
           </section>
 
           {editorOpen && (
-            <section className="mb-6 rounded-[28px] border border-[#ddd5c8] bg-[#fbf8f2]/96 p-4 shadow-[0_10px_35px_rgba(81,64,40,0.05)] sm:p-5 lg:p-6">
-              <div className="mb-5 flex items-center justify-between gap-3">
+            <section className="mb-6 rounded-[28px] border border-[#ddd5c8] bg-[#fbf8f2]/96 p-4 shadow-[0_10px_35px_rgba(81,64,40,0.05)] sm:p-5">
+              <div className="mb-3 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.32em] text-[#8f816f]">
                   <ActiveIcon size={14} strokeWidth={1.8} />
                   <span>{form.id ? `Edit ${meta.label}` : meta.label}</span>
