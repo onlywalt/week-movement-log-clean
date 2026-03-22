@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Coffee,
   Bike,
   Footprints,
+  Coffee,
   BookOpen,
   Search,
   Trash2,
@@ -10,1302 +10,647 @@ import {
   CalendarDays,
   Clock3,
   MapPin,
-  Plus,
   X,
   Image as ImageIcon,
 } from "lucide-react";
 
-const STORAGE_KEY = "daily-frames-v4";
+const STORAGE_KEY = "daily-frame-entries-v3";
 
-const activityOptions = [
-  { value: "Ride", icon: Bike },
-  { value: "Walk", icon: Footprints },
-  { value: "Cafe", icon: Coffee },
-  { value: "Journal", icon: BookOpen },
-];
-
-const theme = {
-  bg: "#f5f1ea",
-  panel: "#faf7f2",
-  panel2: "#f0ebe2",
-  border: "#d2cabd",
-  borderStrong: "#bbb2a4",
-  text: "#2a2926",
-  subtext: "#7a7268",
-  accent: "#8f4a43",
-  black: "#1f1f1d",
-  white: "#ffffff",
+const TYPE_META = {
+  Ride: {
+    label: "RIDE",
+    icon: Bike,
+  },
+  Walk: {
+    label: "WALK",
+    icon: Footprints,
+  },
+  Cafe: {
+    label: "CAFE",
+    icon: Coffee,
+  },
+  Notes: {
+    label: "NOTES",
+    icon: BookOpen,
+  },
 };
 
-function uid() {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
 function todayString() {
-  const d = new Date();
-  return d.toISOString().split("T")[0];
+  return new Date().toISOString().slice(0, 10);
 }
 
-function prettyDate(dateStr) {
+function nowTimeString() {
+  const d = new Date();
+  const h = String(d.getHours()).padStart(2, "0");
+  const m = String(d.getMinutes()).padStart(2, "0");
+  return `${h}:${m}`;
+}
+
+function makeEmptyForm(type = "Ride", date = todayString()) {
+  return {
+    id: null,
+    type,
+    title: "",
+    place: "",
+    note: "",
+    date,
+    time: nowTimeString(),
+    image: "",
+  };
+}
+
+function formatDateLabel(dateStr) {
+  if (!dateStr) return "";
   const d = new Date(`${dateStr}T12:00:00`);
   return d.toLocaleDateString(undefined, {
     weekday: "short",
-    year: "numeric",
     month: "short",
     day: "numeric",
+    year: "numeric",
   });
 }
 
-function prettyTime(date) {
-  return new Date(date).toLocaleTimeString([], {
+function formatTimeLabel(timeStr) {
+  if (!timeStr) return "";
+  const [hour, minute] = timeStr.split(":");
+  const d = new Date();
+  d.setHours(Number(hour || 0));
+  d.setMinutes(Number(minute || 0));
+  return d.toLocaleTimeString([], {
     hour: "numeric",
     minute: "2-digit",
   });
 }
 
-function loadEntries() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-  } catch {
-    return [];
-  }
-}
-
-function saveEntries(entries) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
-}
-
-async function compressImage(file, maxSize = 1600, quality = 0.82) {
-  const dataUrl = await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-
-  const img = await new Promise((resolve, reject) => {
-    const image = new window.Image();
-    image.onload = () => resolve(image);
-    image.onerror = reject;
-    image.src = dataUrl;
-  });
-
-  let width = img.width;
-  let height = img.height;
-
-  if (width > maxSize || height > maxSize) {
-    if (width > height) {
-      height = Math.round((height * maxSize) / width);
-      width = maxSize;
-    } else {
-      width = Math.round((width * maxSize) / height);
-      height = maxSize;
-    }
-  }
-
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas not supported");
-
-  ctx.drawImage(img, 0, 0, width, height);
-
-  return canvas.toDataURL("image/jpeg", quality);
-}
-
-const baseInputStyle = {
-  width: "100%",
-  padding: "12px 14px",
-  borderRadius: "14px",
-  border: `1px solid ${theme.border}`,
-  background: theme.white,
-  color: theme.text,
-  fontSize: "14px",
-  outline: "none",
-  boxSizing: "border-box",
-  fontFamily: "inherit",
-};
-
-function Field({ label, children }) {
-  return (
-    <label style={{ display: "block" }}>
-      <div
-        style={{
-          fontSize: 12,
-          marginBottom: 8,
-          color: theme.subtext,
-          fontWeight: 600,
-          letterSpacing: "0.02em",
-        }}
-      >
-        {label}
-      </div>
-      {children}
-    </label>
-  );
-}
-
-function TypeButton({ active, icon: Icon, label, onClick }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "10px 14px",
-        borderRadius: 999,
-        border: `1px solid ${active ? theme.borderStrong : theme.border}`,
-        background: active ? theme.panel2 : theme.panel,
-        color: theme.text,
-        cursor: "pointer",
-        fontSize: 14,
-        fontWeight: active ? 600 : 500,
-        fontFamily: "inherit",
-        flex: "0 0 auto",
-        whiteSpace: "nowrap",
-      }}
-    >
-      <Icon size={15} />
-      {label}
-    </button>
-  );
-}
-
-function ActionButton({ children, onClick, type = "button" }) {
-  return (
-    <button
-      type={type}
-      onClick={onClick}
-      style={{
-        padding: "10px 15px",
-        borderRadius: 14,
-        border: `1px solid ${theme.border}`,
-        background: theme.panel2,
-        color: theme.text,
-        cursor: "pointer",
-        fontSize: 14,
-        fontWeight: 600,
-        letterSpacing: "-0.01em",
-        fontFamily: "inherit",
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
-function TabButton({ active, children, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        padding: "10px 15px",
-        borderRadius: 999,
-        border: `1px solid ${active ? theme.borderStrong : theme.border}`,
-        background: active ? theme.panel : "transparent",
-        color: active ? theme.text : theme.subtext,
-        cursor: "pointer",
-        fontSize: 13,
-        fontWeight: 600,
-        marginRight: 8,
-        letterSpacing: "-0.01em",
-        fontFamily: "inherit",
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
-function EmptyState({ title, body }) {
+function PaperDotBackground() {
   return (
     <div
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0"
       style={{
-        border: `1px solid ${theme.border}`,
-        borderRadius: 22,
-        background: theme.white,
-        padding: 28,
-        textAlign: "center",
+        backgroundColor: "#f4f0e8",
+        backgroundImage:
+          "radial-gradient(circle at 1px 1px, rgba(143, 122, 92, 0.22) 1px, transparent 0)",
+        backgroundSize: "24px 24px",
       }}
-    >
-      <div
-        style={{
-          fontSize: 18,
-          fontWeight: 600,
-          color: theme.subtext,
-          marginBottom: 8,
-          letterSpacing: "-0.01em",
-        }}
-      >
-        {title}
-      </div>
-      <div
-        style={{
-          fontSize: 14,
-          lineHeight: 1.7,
-          color: "#a39a8f",
-          maxWidth: 420,
-          margin: "0 auto",
-        }}
-      >
-        {body}
-      </div>
-    </div>
-  );
-}
-
-function PhotoFrame({ src, alt, background = theme.white, maxHeight = 520 }) {
-  return (
-    <div
-      style={{
-        width: "100%",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background,
-        border: `1px solid ${theme.border}`,
-        borderRadius: 18,
-        overflow: "hidden",
-        padding: 6,
-        boxSizing: "border-box",
-      }}
-    >
-      <img
-        src={src}
-        alt={alt}
-        style={{
-          width: "auto",
-          height: "auto",
-          maxWidth: "100%",
-          maxHeight,
-          objectFit: "contain",
-          display: "block",
-          borderRadius: 10,
-        }}
-      />
-    </div>
-  );
-}
-
-function EntryForm({ onSave, onCancel, initialEntry, defaultDate }) {
-  const [type, setType] = useState(initialEntry?.type || "Ride");
-  const [date, setDate] = useState(
-    initialEntry?.date || defaultDate || todayString()
-  );
-  const [title, setTitle] = useState(initialEntry?.title || "");
-  const [place, setPlace] = useState(initialEntry?.place || "");
-  const [duration, setDuration] = useState(initialEntry?.duration || "");
-  const [rating, setRating] = useState(initialEntry?.rating || "");
-  const [note, setNote] = useState(initialEntry?.note || "");
-  const [photo, setPhoto] = useState(initialEntry?.photo || "");
-  const [photoName, setPhotoName] = useState(initialEntry?.photoName || "");
-  const [photoBusy, setPhotoBusy] = useState(false);
-  const fileInputRef = useRef(null);
-
-  const showPlace = type === "Cafe";
-  const showDuration = ["Ride", "Walk"].includes(type);
-  const showRating = type === "Cafe";
-
-  async function handlePhotoChange(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      alert("Please choose an image file.");
-      return;
-    }
-
-    try {
-      setPhotoBusy(true);
-      const compressed = await compressImage(file);
-      setPhoto(compressed);
-      setPhotoName(file.name || "Photo");
-    } catch {
-      alert("Could not load this photo.");
-    } finally {
-      setPhotoBusy(false);
-    }
-  }
-
-  function removePhoto() {
-    setPhoto("");
-    setPhotoName("");
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  }
-
-  function handleSubmit(e) {
-    e.preventDefault();
-    if (!title.trim()) return;
-
-    onSave({
-      id: initialEntry?.id || uid(),
-      createdAt: initialEntry?.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      type,
-      date,
-      title: title.trim(),
-      place: place.trim(),
-      duration: duration.trim(),
-      rating: rating.trim(),
-      note: note.trim(),
-      photo,
-      photoName,
-    });
-  }
-
-  function handleCancel() {
-    onCancel();
-  }
-
-  return (
-    <form onSubmit={handleSubmit} style={{ display: "grid", gap: 18 }}>
-      <div
-        style={{
-          position: "relative",
-          marginLeft: -2,
-          marginRight: -2,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            gap: 10,
-            overflowX: "auto",
-            overflowY: "hidden",
-            whiteSpace: "nowrap",
-            WebkitOverflowScrolling: "touch",
-            scrollbarWidth: "none",
-            msOverflowStyle: "none",
-            paddingBottom: 4,
-            paddingInline: 2,
-          }}
-          className="activity-scroll-row"
-        >
-          {activityOptions.map((item) => (
-            <TypeButton
-              key={item.value}
-              active={type === item.value}
-              icon={item.icon}
-              label={item.value}
-              onClick={() => setType(item.value)}
-            />
-          ))}
-        </div>
-      </div>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          gap: 16,
-        }}
-      >
-        <Field label="Date">
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            style={baseInputStyle}
-          />
-        </Field>
-
-        <Field label="Title">
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Add title"
-            style={baseInputStyle}
-          />
-        </Field>
-      </div>
-
-      {(showPlace || showDuration || showRating) && (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-            gap: 16,
-          }}
-        >
-          {showPlace && (
-            <Field label="Location">
-              <input
-                type="text"
-                value={place}
-                onChange={(e) => setPlace(e.target.value)}
-                placeholder="Cafe or area"
-                style={baseInputStyle}
-              />
-            </Field>
-          )}
-
-          {showDuration && (
-            <Field label="Duration">
-              <input
-                type="text"
-                value={duration}
-                onChange={(e) => setDuration(e.target.value)}
-                placeholder="45 min / 2 hr"
-                style={baseInputStyle}
-              />
-            </Field>
-          )}
-
-          {showRating && (
-            <Field label="Rating">
-              <input
-                type="text"
-                value={rating}
-                onChange={(e) => setRating(e.target.value)}
-                placeholder="4.5 / 5"
-                style={baseInputStyle}
-              />
-            </Field>
-          )}
-        </div>
-      )}
-
-      <div>
-        <div
-          style={{
-            fontSize: 12,
-            marginBottom: 8,
-            color: theme.subtext,
-            fontWeight: 600,
-            letterSpacing: "0.02em",
-          }}
-        >
-          Photo
-        </div>
-
-        <div
-          style={{
-            border: `1px solid ${theme.border}`,
-            background: theme.white,
-            borderRadius: 18,
-            padding: 14,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              gap: 10,
-              flexWrap: "wrap",
-              alignItems: "center",
-              marginBottom: photo ? 14 : 0,
-            }}
-          >
-            <label
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "10px 12px",
-                borderRadius: 999,
-                border: `1px solid ${theme.border}`,
-                background: theme.panel2,
-                color: theme.text,
-                cursor: photoBusy ? "wait" : "pointer",
-                fontSize: 13,
-                fontWeight: 600,
-              }}
-            >
-              <ImageIcon size={14} />
-              {photoBusy ? "Preparing photo..." : photo ? "Replace photo" : "Add photo"}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handlePhotoChange}
-                style={{ display: "none" }}
-              />
-            </label>
-
-            {photo && (
-              <ActionButton onClick={removePhoto}>Remove photo</ActionButton>
-            )}
-          </div>
-
-          {photo && (
-            <div style={{ display: "grid", gap: 8 }}>
-              <PhotoFrame
-                src={photo}
-                alt={photoName || "Entry photo preview"}
-                background={theme.panel}
-                maxHeight={420}
-              />
-              {photoName && (
-                <div style={{ fontSize: 12, color: theme.subtext }}>
-                  {photoName}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: 12,
-            flexWrap: "wrap",
-            marginBottom: 8,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 12,
-              color: theme.subtext,
-              fontWeight: 600,
-              letterSpacing: "0.02em",
-            }}
-          >
-            Notes
-          </div>
-
-          <div
-            style={{
-              fontSize: 12,
-              color: theme.subtext,
-            }}
-          >
-            Voice notes coming soon
-          </div>
-        </div>
-
-        <textarea
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          rows={4}
-          placeholder="A short note, cafe detail, ride feeling, or photo memory"
-          style={{ ...baseInputStyle, resize: "vertical", minHeight: 110 }}
-        />
-      </div>
-
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <ActionButton type="submit">
-          {initialEntry ? "Save changes" : "Add entry"}
-        </ActionButton>
-        <ActionButton onClick={handleCancel}>Cancel</ActionButton>
-      </div>
-    </form>
-  );
-}
-
-function TypePill({ type }) {
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        padding: "5px 10px",
-        borderRadius: 999,
-        border: `1px solid ${theme.border}`,
-        background: theme.panel2,
-        color: theme.text,
-        fontSize: 12,
-        fontWeight: 600,
-      }}
-    >
-      {type}
-    </span>
-  );
-}
-
-function IconButton({ children, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        width: 36,
-        height: 36,
-        borderRadius: 12,
-        border: `1px solid ${theme.border}`,
-        background: theme.panel,
-        cursor: "pointer",
-      }}
-    >
-      {children}
-    </button>
+    />
   );
 }
 
 function EntryCard({ entry, onEdit, onDelete }) {
+  const meta = TYPE_META[entry.type] || TYPE_META.Notes;
+  const Icon = meta.icon;
+
   return (
-    <div
-      style={{
-        border: `1px solid ${theme.border}`,
-        borderRadius: 22,
-        background: theme.panel,
-        padding: 18,
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          gap: 12,
-        }}
-      >
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              flexWrap: "wrap",
-              marginBottom: 10,
-            }}
-          >
-            <TypePill type={entry.type} />
-            <span style={{ fontSize: 12, color: theme.subtext }}>
-              {prettyTime(entry.updatedAt)}
+    <article className="group overflow-hidden rounded-[22px] border border-[#d8d0c4] bg-[#fbf8f2]/96 shadow-[0_8px_30px_rgba(80,62,38,0.06)] transition hover:-translate-y-[1px] hover:shadow-[0_10px_32px_rgba(80,62,38,0.10)]">
+      {entry.image ? (
+        <div className="relative aspect-[4/3] w-full overflow-hidden border-b border-[#e3ddd3] bg-[#efebe3]">
+          <img
+            src={entry.image}
+            alt={entry.title || entry.place || entry.type}
+            className="h-full w-full object-cover"
+          />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/10 via-transparent to-transparent" />
+        </div>
+      ) : (
+        <div className="flex aspect-[4/3] w-full items-center justify-center border-b border-[#e3ddd3] bg-[#f1ece3] text-[#9f937f]">
+          <div className="flex flex-col items-center gap-2">
+            <ImageIcon size={20} strokeWidth={1.6} />
+            <span className="text-[10px] uppercase tracking-[0.28em]">
+              No Image
             </span>
           </div>
+        </div>
+      )}
 
-          <div
-            style={{
-              fontSize: 20,
-              fontWeight: 600,
-              lineHeight: 1.25,
-              marginBottom: 8,
-              color: theme.text,
-              letterSpacing: "-0.01em",
-            }}
-          >
-            {entry.title}
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 14,
-              color: theme.subtext,
-              fontSize: 13,
-              marginBottom: entry.note || entry.photo ? 14 : 0,
-            }}
-          >
-            {entry.place && (
-              <span
-                style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-              >
-                <MapPin size={14} /> {entry.place}
-              </span>
-            )}
-            {entry.duration && (
-              <span
-                style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-              >
-                <Clock3 size={14} /> {entry.duration}
-              </span>
-            )}
-            {entry.rating && <span>Rating: {entry.rating}</span>}
-          </div>
-
-          {entry.note && (
-            <div
-              style={{
-                color: theme.text,
-                fontSize: 14,
-                lineHeight: 1.7,
-                whiteSpace: "pre-wrap",
-                marginBottom: entry.photo ? 14 : 0,
-              }}
-            >
-              {entry.note}
+      <div className="p-5 sm:p-6">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="mb-3 flex items-center gap-2 text-[9px] font-normal tracking-[0.32em] text-[#9c8f7d]">
+              <Icon size={12} strokeWidth={1.7} />
+              <span>{meta.label}</span>
             </div>
-          )}
 
-          {entry.photo && (
-            <PhotoFrame
-              src={entry.photo}
-              alt={entry.photoName || entry.title || "Entry photo"}
-              background="#f8f6f2"
-              maxHeight={360}
-            />
-          )}
+            <h3 className="line-clamp-2 text-[16px] font-light leading-[1.35] text-[#2f2922]">
+              {entry.title?.trim() || entry.place?.trim() || "Untitled entry"}
+            </h3>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-1.5 opacity-75 transition group-hover:opacity-100">
+            <button
+              type="button"
+              onClick={() => onEdit(entry)}
+              className="rounded-full border border-[#ddd4c7] bg-[#f8f4ec] p-2 text-[#746756] transition hover:bg-[#efe9de] hover:text-[#2a241d]"
+              title="Edit entry"
+            >
+              <Pencil size={14} strokeWidth={1.7} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onDelete(entry.id)}
+              className="rounded-full border border-[#ddd4c7] bg-[#f8f4ec] p-2 text-[#746756] transition hover:bg-[#efe9de] hover:text-[#2a241d]"
+              title="Delete entry"
+            >
+              <Trash2 size={14} strokeWidth={1.7} />
+            </button>
+          </div>
         </div>
 
-        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-          <IconButton onClick={() => onEdit(entry)}>
-            <Pencil size={16} color={theme.text} />
-          </IconButton>
-          <IconButton onClick={() => onDelete(entry.id)}>
-            <Trash2 size={16} color={theme.accent} />
-          </IconButton>
+        {entry.note?.trim() ? (
+          <p className="mb-5 line-clamp-5 whitespace-pre-wrap text-[13.5px] leading-[1.7] text-[#6b5f50]">
+            {entry.note}
+          </p>
+        ) : (
+          <p className="mb-5 text-[13px] italic text-[#9b8f7f]">
+            No notes added.
+          </p>
+        )}
+
+        <div className="border-t border-[#e5ddd2] pt-4">
+          <div className="grid gap-2 text-[9px] uppercase tracking-[0.24em] text-[#a09483] sm:grid-cols-3">
+            <div className="flex items-center gap-2">
+              <CalendarDays size={12} strokeWidth={1.5} />
+              <span className="truncate">{formatDateLabel(entry.date)}</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Clock3 size={12} strokeWidth={1.5} />
+              <span>{formatTimeLabel(entry.time)}</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <MapPin size={12} strokeWidth={1.5} />
+              <span className="truncate">{entry.place?.trim() || "—"}</span>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
+    </article>
   );
 }
 
 export default function App() {
   const [entries, setEntries] = useState([]);
-  const [activeTab, setActiveTab] = useState("today");
-  const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState(null);
+  const [view, setView] = useState("today");
   const [selectedDate, setSelectedDate] = useState(todayString());
-  const [search, setSearch] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [editorOpen, setEditorOpen] = useState(true);
+  const [form, setForm] = useState(makeEmptyForm("Ride", todayString()));
+
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
-    setEntries(loadEntries());
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) setEntries(parsed);
+    } catch (error) {
+      console.error("Failed to load entries:", error);
+    }
   }, []);
 
   useEffect(() => {
-    saveEntries(entries);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
   }, [entries]);
 
   useEffect(() => {
-    const styleId = "hide-activity-scrollbar";
-    if (document.getElementById(styleId)) return;
+    setForm((prev) => ({
+      ...prev,
+      date: view === "today" ? todayString() : selectedDate,
+    }));
+  }, [view, selectedDate]);
 
-    const style = document.createElement("style");
-    style.id = styleId;
-    style.innerHTML = `
-      .activity-scroll-row::-webkit-scrollbar {
-        display: none;
-      }
-    `;
-    document.head.appendChild(style);
-  }, []);
+  const filteredEntries = useMemo(() => {
+    const targetDate = view === "today" ? todayString() : selectedDate;
 
-  const todayEntries = useMemo(() => {
-    return entries
-      .filter((entry) => entry.date === todayString())
-      .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+    let list = entries.filter((item) => item.date === targetDate);
+
+    if (searchTerm.trim()) {
+      const q = searchTerm.toLowerCase();
+      list = list.filter((item) =>
+        [item.type, item.title, item.place, item.note]
+          .join(" ")
+          .toLowerCase()
+          .includes(q)
+      );
+    }
+
+    return [...list].sort((a, b) => {
+      const aa = `${a.date} ${a.time || "00:00"}`;
+      const bb = `${b.date} ${b.time || "00:00"}`;
+      return bb.localeCompare(aa);
+    });
+  }, [entries, view, selectedDate, searchTerm]);
+
+  const allDates = useMemo(() => {
+    const set = new Set(entries.map((item) => item.date).filter(Boolean));
+    return [...set].sort((a, b) => b.localeCompare(a));
   }, [entries]);
 
-  const historyDates = useMemo(() => {
-    return [...new Set(entries.map((entry) => entry.date))].sort(
-      (a, b) => new Date(b) - new Date(a)
-    );
-  }, [entries]);
+  const hasEntries = filteredEntries.length > 0;
 
-  const filteredHistory = useMemo(() => {
-    return entries
-      .filter((entry) => entry.date === selectedDate)
-      .filter((entry) => {
-        if (!search.trim()) return true;
-        const haystack =
-          `${entry.title} ${entry.place} ${entry.note} ${entry.type}`.toLowerCase();
-        return haystack.includes(search.toLowerCase());
-      })
-      .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-  }, [entries, selectedDate, search]);
+  function handleChange(field, value) {
+    setForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  }
 
-  function handleSave(entry) {
+  function openNewEntry(type) {
+    const targetDate = view === "today" ? todayString() : selectedDate;
+    setForm(makeEmptyForm(type, targetDate));
+    setEditorOpen(true);
+  }
+
+  function handleImageUpload(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setForm((prev) => ({
+        ...prev,
+        image: String(reader.result || ""),
+      }));
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function clearImage() {
+    setForm((prev) => ({
+      ...prev,
+      image: "",
+    }));
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function handleSubmit(e) {
+    e.preventDefault();
+
+    const cleanTitle = form.title.trim();
+    const cleanPlace = form.place.trim();
+    const cleanNote = form.note.trim();
+
+    if (!cleanTitle && !cleanPlace && !cleanNote) return;
+
+    const payload = {
+      ...form,
+      title: cleanTitle,
+      place: cleanPlace,
+      note: cleanNote,
+      id: form.id || crypto.randomUUID(),
+    };
+
     setEntries((prev) => {
-      const exists = prev.some((item) => item.id === entry.id);
+      const exists = prev.some((item) => item.id === payload.id);
       if (exists) {
-        return prev.map((item) => (item.id === entry.id ? entry : item));
+        return prev.map((item) => (item.id === payload.id ? payload : item));
       }
-      return [entry, ...prev];
+      return [payload, ...prev];
     });
 
-    setShowForm(false);
-    setEditing(null);
-    setSelectedDate(entry.date);
-
-    if (entry.date !== todayString()) {
-      setActiveTab("history");
-    }
+    setForm(makeEmptyForm(form.type, form.date));
+    setEditorOpen(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   function handleEdit(entry) {
-    setEditing(entry);
-    setShowForm(true);
+    setForm({ ...entry });
+    setEditorOpen(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function handleDelete(id) {
-    setEntries((prev) => prev.filter((entry) => entry.id !== id));
-    if (editing?.id === id) {
-      setEditing(null);
-      setShowForm(false);
+    setEntries((prev) => prev.filter((item) => item.id !== id));
+    if (form.id === id) {
+      setForm(makeEmptyForm("Ride", view === "today" ? todayString() : selectedDate));
     }
   }
 
-  function startNewEntry() {
-    setEditing(null);
-    setShowForm(true);
-  }
+  const formLabelTitle =
+    form.type === "Cafe" ? "Title / Cafe" : form.type === "Notes" ? "Title" : "Title";
 
-  const isMobile =
-    typeof window !== "undefined" ? window.innerWidth < 768 : false;
+  const formLabelPlace = form.type === "Notes" ? "Place (optional)" : "Place";
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        backgroundColor: theme.bg,
-        backgroundImage: `
-          radial-gradient(circle at 1px 1px, #d6cdc0 0.8px, transparent 0)
-        `,
-        backgroundSize: "16px 16px",
-        padding: "32px 18px",
-        boxSizing: "border-box",
-      }}
-    >
-      <div
-        style={{
-          maxWidth: 1120,
-          margin: "0 auto",
-          color: theme.subtext,
-          fontFamily:
-            'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-        }}
-      >
-        <div
-          style={{
-            background: theme.panel,
-            border: `1px solid ${theme.borderStrong}`,
-            borderRadius: 30,
-            padding: 24,
-            marginBottom: 20,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "flex-end",
-              gap: 18,
-              flexWrap: "wrap",
-            }}
-          >
-            <div>
-              <div
-                style={{
-                  fontSize: 11,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.16em",
-                  color: theme.subtext,
-                  marginBottom: 8,
-                  fontWeight: 600,
-                }}
-              >
-                Daily Frames
+    <div className="min-h-screen bg-[#f4f0e8] text-[#2a241d]">
+      <div className="relative min-h-screen overflow-hidden">
+        <PaperDotBackground />
+
+        <div className="relative mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 pb-14 pt-6 sm:px-6 lg:px-8">
+          <header className="mb-6 rounded-[28px] border border-[#ddd5c8] bg-[#f8f4ec]/94 px-5 py-6 shadow-[0_10px_35px_rgba(81,64,40,0.05)] sm:px-7 sm:py-7">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+              <div className="min-w-0">
+              <h1 className="mt-1 text-[18px] font-semibold tracking-[0.02em] text-[#3a332b] sm:text-[20px]">
+  Daily Frame
+</h1>
+
+                <div className="mt-1 text-[9px] uppercase tracking-[0.36em] text-[#7a6b58] sm:text-[10px]">
+                  RIDE | TIME | PLACE
+                </div>
+
+                <p className="mt-4 text-[13px] italic text-[#8a7c69]">
+                  Ride the day. Keep the moment.
+                </p>
               </div>
 
-              <div
-                style={{
-                  fontSize: "clamp(26px, 4vw, 42px)",
-                  fontWeight: 600,
-                  lineHeight: 1.05,
-                  color: theme.subtext,
-                  letterSpacing: "-0.015em",
-                  marginBottom: 10,
-                }}
-              >
-                Today + History + Ride
-              </div>
-
-              <div
-                style={{
-                  fontSize: 14,
-                  lineHeight: 1.7,
-                  color: theme.subtext,
-                  maxWidth: 680,
-                }}
-              >
-                Ride the day. Keep the moment
-              </div>
-            </div>
-
-            <ActionButton onClick={startNewEntry}>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                <Plus size={16} />
-                Add entry
-              </span>
-            </ActionButton>
-          </div>
-        </div>
-
-        <div style={{ marginBottom: 20 }}>
-          <TabButton
-            active={activeTab === "today"}
-            onClick={() => setActiveTab("today")}
-          >
-            Today
-          </TabButton>
-          <TabButton
-            active={activeTab === "history"}
-            onClick={() => setActiveTab("history")}
-          >
-            History
-          </TabButton>
-        </div>
-
-        {showForm && (
-          <div
-            style={{
-              position: isMobile ? "fixed" : "relative",
-              inset: isMobile ? 0 : "auto",
-              background: isMobile ? theme.bg : theme.panel,
-              zIndex: 1000,
-              overflowY: "auto",
-              padding: isMobile ? "20px" : "24px",
-              border: isMobile ? "none" : `1px solid ${theme.borderStrong}`,
-              borderRadius: isMobile ? 0 : 30,
-              marginBottom: isMobile ? 0 : 20,
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "flex-start",
-                gap: 14,
-                marginBottom: 18,
-              }}
-            >
-              <div>
-                <div
-                  style={{
-                    fontSize: 24,
-                    fontWeight: 600,
-                    color: theme.text,
-                    marginBottom: 6,
-                    letterSpacing: "-0.01em",
-                  }}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setView("today")}
+                  className={`rounded-full border px-4 py-2.5 text-[11px] uppercase tracking-[0.28em] transition ${
+                    view === "today"
+                      ? "border-[#b8aa94] bg-[#ece4d6] text-[#2a241d]"
+                      : "border-[#d6cdbf] bg-[#f7f2e8] text-[#7b6f5f] hover:bg-[#eee6d9]"
+                  }`}
                 >
-                  {editing ? "Edit entry" : "New entry"}
-                </div>
-                <div style={{ fontSize: 13, color: theme.subtext, lineHeight: 1.6 }}>
-                  Fast enough for phone use, clean enough to grow into a proper journal.
-                </div>
-              </div>
+                  Today
+                </button>
 
-              <IconButton
-                onClick={() => {
-                  setShowForm(false);
-                  setEditing(null);
-                }}
-              >
-                <X size={18} color={theme.text} />
-              </IconButton>
-            </div>
-
-            <EntryForm
-              onSave={handleSave}
-              onCancel={() => {
-                setShowForm(false);
-                setEditing(null);
-              }}
-              initialEntry={editing}
-              defaultDate={activeTab === "history" ? selectedDate : todayString()}
-            />
-          </div>
-        )}
-
-        {activeTab === "today" ? (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: isMobile
-                ? "1fr"
-                : "minmax(0, 1.15fr) minmax(280px, 0.85fr)",
-              gap: 20,
-            }}
-          >
-            <div
-              style={{
-                background: theme.panel,
-                border: `1px solid ${theme.borderStrong}`,
-                borderRadius: 30,
-                padding: 22,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "flex-start",
-                  gap: 12,
-                  marginBottom: 18,
-                  flexWrap: "wrap",
-                }}
-              >
-                <div>
-                  <div
-                    style={{
-                      fontSize: 24,
-                      fontWeight: 600,
-                      color: theme.subtext,
-                      letterSpacing: "-0.01em",
-                      marginBottom: 4,
-                    }}
-                  >
-                    Today
-                  </div>
-                  <div style={{ fontSize: 13, color: theme.subtext, lineHeight: 1.6 }}>
-                    {prettyDate(todayString())}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    background: theme.white,
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: 14,
-                    padding: "9px 13px",
-                    fontSize: 13,
-                    color: theme.subtext,
-                  }}
-                >
-                  {todayEntries.length} {todayEntries.length === 1 ? "entry" : "entries"}
-                </div>
-              </div>
-
-              <div style={{ display: "grid", gap: 16 }}>
-                {todayEntries.length > 0 ? (
-                  todayEntries.map((entry) => (
-                    <EntryCard
-                      key={entry.id}
-                      entry={entry}
-                      onEdit={handleEdit}
-                      onDelete={handleDelete}
-                    />
-                  ))
-                ) : (
-                  <EmptyState
-                    title="No entries for this date."
-                    body="A ride, a walk, a cafe stop, a photo note — add one and this starts feeling like a real journal."
-                  />
-                )}
-              </div>
-            </div>
-
-            <div
-              style={{
-                background: theme.panel,
-                border: `1px solid ${theme.borderStrong}`,
-                borderRadius: 30,
-                padding: 22,
-              }}
-            >
-              <div style={{ marginBottom: 18 }}>
-                <div
-                  style={{
-                    fontSize: 24,
-                    fontWeight: 600,
-                    color: theme.subtext,
-                    letterSpacing: "-0.01em",
-                    marginBottom: 4,
-                  }}
-                >
-                  Recent dates
-                </div>
-                <div style={{ fontSize: 13, color: theme.subtext, lineHeight: 1.6 }}>
-                  Quick jump into your archive.
-                </div>
-              </div>
-
-              <div style={{ display: "grid", gap: 10 }}>
-                {historyDates.length > 0 ? (
-                  historyDates.slice(0, 10).map((date) => {
-                    const count = entries.filter((entry) => entry.date === date).length;
-                    const active = selectedDate === date;
-
-                    return (
-                      <button
-                        key={date}
-                        onClick={() => {
-                          setSelectedDate(date);
-                          setActiveTab("history");
-                        }}
-                        style={{
-                          width: "100%",
-                          textAlign: "left",
-                          padding: "14px 16px",
-                          borderRadius: 16,
-                          border: `1px solid ${
-                            active ? theme.borderStrong : theme.border
-                          }`,
-                          background: active ? theme.panel2 : theme.white,
-                          cursor: "pointer",
-                          color: theme.text,
-                          fontFamily: "inherit",
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            gap: 12,
-                          }}
-                        >
-                          <div>
-                            <div
-                              style={{
-                                fontWeight: 600,
-                                marginBottom: 4,
-                                fontSize: 14,
-                              }}
-                            >
-                              {prettyDate(date)}
-                            </div>
-                            <div style={{ fontSize: 12, color: theme.subtext }}>
-                              Browse this day
-                            </div>
-                          </div>
-                          <div style={{ fontSize: 12, color: theme.subtext }}>{count}</div>
-                        </div>
-                      </button>
-                    );
-                  })
-                ) : (
-                  <EmptyState
-                    title="No history yet."
-                    body="Once you add a few entries, your recent dates will appear here."
-                  />
-                )}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div
-            style={{
-              background: theme.panel,
-              border: `1px solid ${theme.borderStrong}`,
-              borderRadius: 30,
-              padding: 22,
-            }}
-          >
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: isMobile
-                  ? "1fr"
-                  : "minmax(240px, 0.9fr) minmax(280px, 1.1fr)",
-                gap: 18,
-                alignItems: "end",
-                marginBottom: 20,
-              }}
-            >
-              <div>
-                <div
-                  style={{
-                    fontSize: 24,
-                    fontWeight: 600,
-                    color: theme.subtext,
-                    letterSpacing: "-0.01em",
-                    marginBottom: 4,
-                  }}
+                <button
+                  type="button"
+                  onClick={() => setView("history")}
+                  className={`rounded-full border px-4 py-2.5 text-[11px] uppercase tracking-[0.28em] transition ${
+                    view === "history"
+                      ? "border-[#b8aa94] bg-[#ece4d6] text-[#2a241d]"
+                      : "border-[#d6cdbf] bg-[#f7f2e8] text-[#7b6f5f] hover:bg-[#eee6d9]"
+                  }`}
                 >
                   History
-                </div>
-                <div style={{ fontSize: 13, color: theme.subtext, lineHeight: 1.6 }}>
-                  Review older rides, cafes, notes, and photo days without clutter.
-                </div>
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <section className="mb-5 rounded-[24px] border border-[#ddd5c8] bg-[#f8f4ec]/94 p-4 shadow-[0_8px_30px_rgba(81,64,40,0.04)] sm:p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 gap-2 overflow-x-auto pb-1">
+                {Object.keys(TYPE_META).map((type) => {
+                  const meta = TYPE_META[type];
+                  const Icon = meta.icon;
+                  const active = form.type === type && editorOpen;
+
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => openNewEntry(type)}
+                      className={`flex shrink-0 items-center gap-2 rounded-full border px-4 py-2.5 text-[11px] uppercase tracking-[0.26em] transition ${
+                        active
+                          ? "border-[#b8aa94] bg-[#ece4d6] text-[#241e18]"
+                          : "border-[#d6cdbf] bg-[#f7f2e8] text-[#7b6f5f] hover:bg-[#eee6d9]"
+                      }`}
+                    >
+                      <Icon size={14} strokeWidth={1.8} />
+                      <span>{type}</span>
+                    </button>
+                  );
+                })}
               </div>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: isMobile
-                    ? "1fr"
-                    : "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: 14,
-                }}
-              >
-                <Field label="Choose date">
-                  <div style={{ position: "relative" }}>
-                    <CalendarDays
-                      size={16}
-                      color={theme.subtext}
-                      style={{
-                        position: "absolute",
-                        left: 12,
-                        top: "50%",
-                        transform: "translateY(-50%)",
-                      }}
-                    />
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                {view === "history" ? (
+                  <div className="flex items-center gap-2 rounded-full border border-[#d8cfc2] bg-[#f7f2e8] px-3 py-2.5 text-[#6f6354]">
+                    <CalendarDays size={15} strokeWidth={1.8} />
                     <input
                       type="date"
                       value={selectedDate}
                       onChange={(e) => setSelectedDate(e.target.value)}
-                      style={{ ...baseInputStyle, paddingLeft: 38 }}
+                      className="bg-transparent text-[13px] outline-none"
                     />
                   </div>
-                </Field>
+                ) : (
+                  <div className="rounded-full border border-[#d8cfc2] bg-[#f7f2e8] px-3 py-2.5 text-[11px] uppercase tracking-[0.24em] text-[#8a7d6b]">
+                    {formatDateLabel(todayString())}
+                  </div>
+                )}
 
-                <Field label="Search">
-                  <div style={{ position: "relative" }}>
-                    <Search
-                      size={16}
-                      color={theme.subtext}
-                      style={{
-                        position: "absolute",
-                        left: 12,
-                        top: "50%",
-                        transform: "translateY(-50%)",
-                      }}
-                    />
+                <div className="flex items-center gap-2 rounded-full border border-[#d8cfc2] bg-[#f7f2e8] px-3 py-2.5 text-[#746857]">
+                  <Search size={15} strokeWidth={1.8} />
+                  <input
+                    type="text"
+                    placeholder="Search entries"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full bg-transparent text-[13px] outline-none placeholder:text-[#ac9f8c] sm:w-44"
+                  />
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {editorOpen && (
+            <section className="mb-6 rounded-[28px] border border-[#ddd5c8] bg-[#fbf8f2]/96 p-4 shadow-[0_10px_35px_rgba(81,64,40,0.05)] sm:p-6">
+              <div className="mb-6 flex items-start justify-between gap-3">
+                <div>
+                
+                  <h2 className="mt-3 text-[20px] font-medium tracking-[-0.01em] text-[#2a241d]">
+                    {form.id ? "Edit entry" : `New ${form.type.toLowerCase()} entry`}
+                  </h2>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setEditorOpen(false)}
+                  className="rounded-full border border-[#ddd4c8] bg-[#f7f2e8] p-2 text-[#7a6f5f] transition hover:bg-[#eee7da] hover:text-[#241e18]"
+                  title="Close editor"
+                >
+                  <X size={16} strokeWidth={1.8} />
+                </button>
+              </div>
+
+              <form
+                onSubmit={handleSubmit}
+                className="grid gap-6 lg:grid-cols-[1.12fr_0.88fr]"
+              >
+                <div className="space-y-4">
+                  <div>
+                    <label className="mb-2 block text-[10px] uppercase tracking-[0.32em] text-[#8f816f]">
+                      {formLabelTitle}
+                    </label>
                     <input
                       type="text"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Cafe, ride, note..."
-                      style={{ ...baseInputStyle, paddingLeft: 38 }}
+                      value={form.title}
+                      onChange={(e) => handleChange("title", e.target.value)}
+                      placeholder="Give this moment a title"
+                      className="w-full rounded-[18px] border border-[#ddd4c8] bg-[#f8f4ec] px-4 py-3 text-[15px] text-[#2a241d] outline-none transition placeholder:text-[#af9f8a] focus:border-[#bcae97]"
                     />
                   </div>
-                </Field>
+
+                  <div>
+                    <label className="mb-2 block text-[10px] uppercase tracking-[0.32em] text-[#8f816f]">
+                      {formLabelPlace}
+                    </label>
+                    <input
+                      type="text"
+                      value={form.place}
+                      onChange={(e) => handleChange("place", e.target.value)}
+                      placeholder="Add place or location"
+                      className="w-full rounded-[18px] border border-[#ddd4c8] bg-[#f8f4ec] px-4 py-3 text-[15px] text-[#2a241d] outline-none transition placeholder:text-[#af9f8a] focus:border-[#bcae97]"
+                    />
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-[10px] uppercase tracking-[0.32em] text-[#8f816f]">
+                        Date
+                      </label>
+                      <input
+                        type="date"
+                        value={form.date}
+                        onChange={(e) => handleChange("date", e.target.value)}
+                        className="w-full rounded-[18px] border border-[#ddd4c8] bg-[#f8f4ec] px-4 py-3 text-[15px] text-[#2a241d] outline-none transition focus:border-[#bcae97]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-2 block text-[10px] uppercase tracking-[0.32em] text-[#8f816f]">
+                        Time
+                      </label>
+                      <input
+                        type="time"
+                        value={form.time}
+                        onChange={(e) => handleChange("time", e.target.value)}
+                        className="w-full rounded-[18px] border border-[#ddd4c8] bg-[#f8f4ec] px-4 py-3 text-[15px] text-[#2a241d] outline-none transition focus:border-[#bcae97]"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-[10px] uppercase tracking-[0.32em] text-[#8f816f]">
+                      Note
+                    </label>
+                    <textarea
+                      rows={7}
+                      value={form.note}
+                      onChange={(e) => handleChange("note", e.target.value)}
+                      placeholder="Add the detail, the weather, the feeling, the small thing worth remembering."
+                      className="w-full rounded-[18px] border border-[#ddd4c8] bg-[#f8f4ec] px-4 py-3 text-[15px] leading-7 text-[#2a241d] outline-none transition placeholder:text-[#af9f8a] focus:border-[#bcae97]"
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap gap-3 pt-1">
+                    <button
+                      type="submit"
+                      className="rounded-full border border-[#b8aa94] bg-[#ece4d6] px-5 py-2.5 text-[11px] uppercase tracking-[0.28em] text-[#241e18] transition hover:bg-[#e6dccb]"
+                    >
+                      {form.id ? "Save entry" : "Add entry"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForm(
+                          makeEmptyForm(
+                            form.type,
+                            view === "today" ? todayString() : selectedDate
+                          )
+                        );
+                        if (fileInputRef.current) fileInputRef.current.value = "";
+                      }}
+                      className="rounded-full border border-[#d8cfc2] bg-[#f7f2e8] px-5 py-2.5 text-[11px] uppercase tracking-[0.28em] text-[#7a6f5f] transition hover:bg-[#eee7da]"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-[10px] uppercase tracking-[0.32em] text-[#8f816f]">
+                    Image
+                  </label>
+
+                  <div className="overflow-hidden rounded-[22px] border border-[#ddd4c8] bg-[#f7f2e8]">
+                    {form.image ? (
+                      <div className="relative aspect-[4/3] w-full">
+                        <img
+                          src={form.image}
+                          alt="Preview"
+                          className="h-full w-full object-cover"
+                        />
+                        <div className="absolute right-3 top-3">
+                          <button
+                            type="button"
+                            onClick={clearImage}
+                            className="rounded-full border border-white/60 bg-white/85 p-2 text-[#5f5447] shadow-sm transition hover:bg-white"
+                            title="Remove image"
+                          >
+                            <X size={14} strokeWidth={1.8} />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex aspect-[4/3] items-center justify-center p-6 text-center text-[#8d806f]">
+                        <div className="flex max-w-[260px] flex-col items-center gap-3">
+                          <ImageIcon size={26} strokeWidth={1.7} />
+                          <p className="text-[14px] leading-6 text-[#7a6e5f]">
+                            Add a photo to give the entry that contact-sheet feel.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="border-t border-[#e3dbcf] p-4">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                        className="block w-full text-[13px] text-[#6c604f] file:mr-4 file:rounded-full file:border file:border-[#cdbfa8] file:bg-[#ece4d6] file:px-4 file:py-2 file:text-[11px] file:uppercase file:tracking-[0.22em] file:text-[#241e18]"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </form>
+            </section>
+          )}
+
+          <section className="mb-4">
+            <div className="mb-4 flex items-end justify-between gap-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.34em] text-[#948674]">
+                  Archive view
+                </div>
+                <h2 className="mt-1 text-[18px] font-light leading-none tracking-[0.03em] text-[#241e18]">
+                  {view === "today"
+                    ? "Today"
+                    : formatDateLabel(selectedDate) || "History"}
+                </h2>
               </div>
+
+              {view === "history" && allDates.length > 0 && (
+                <div className="hidden text-[10px] uppercase tracking-[0.26em] text-[#988b79] sm:block">
+                  {allDates.length} saved date{allDates.length > 1 ? "s" : ""}
+                </div>
+              )}
             </div>
 
-            <div style={{ marginBottom: 18 }}>
-              <div
-                style={{
-                  fontSize: 20,
-                  fontWeight: 600,
-                  color: theme.text,
-                  marginBottom: 4,
-                  letterSpacing: "-0.01em",
-                }}
-              >
-                {prettyDate(selectedDate)}
-              </div>
-              <div style={{ fontSize: 13, color: theme.subtext }}>
-                {filteredHistory.length}{" "}
-                {filteredHistory.length === 1 ? "entry" : "entries"}
-              </div>
-            </div>
-
-            <div style={{ display: "grid", gap: 16 }}>
-              {filteredHistory.length > 0 ? (
-                filteredHistory.map((entry) => (
+            {hasEntries ? (
+              <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                {filteredEntries.map((entry) => (
                   <EntryCard
                     key={entry.id}
                     entry={entry}
                     onEdit={handleEdit}
                     onDelete={handleDelete}
                   />
-                ))
-              ) : (
-                <EmptyState
-                  title="No entries for this date."
-                  body="Pick another date, or use Add entry to backfill the day."
-                />
-              )}
-            </div>
-          </div>
-        )}
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-[26px] border border-dashed border-[#d5ccbf] bg-[#f8f4ec]/90 px-6 py-16 text-center shadow-[0_8px_24px_rgba(81,64,40,0.03)]">
+                <p className="text-[10px] uppercase tracking-[0.34em] text-[#9b8e7d]">
+                  No entries yet
+                </p>
+                <p className="mt-3 text-[16px] text-[#6f6354]">
+                  {view === "today"
+                    ? "Start with Ride, Walk, Cafe, or Notes above."
+                    : "No entries for this date."}
+                </p>
+              </div>
+            )}
+          </section>
+        </div>
       </div>
     </div>
   );
