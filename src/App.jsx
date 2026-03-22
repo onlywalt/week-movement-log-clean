@@ -14,7 +14,7 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 
-const STORAGE_KEY = "daily-frame-capture-mode-v4";
+const STORAGE_KEY = "daily-frame-capture-mode-v5";
 
 const TYPE_META = {
   Ride: { label: "RIDE", icon: Bike },
@@ -184,6 +184,7 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState("");
   const [editorOpen, setEditorOpen] = useState(true);
   const [form, setForm] = useState(makeEmptyForm("Ride", todayString()));
+  const [imageBusy, setImageBusy] = useState(false);
 
   const fileInputRef = useRef(null);
 
@@ -199,7 +200,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+    } catch (error) {
+      console.error("Failed to save entries:", error);
+      alert("This photo is too large to save on this device. Try a smaller photo.");
+    }
   }, [entries]);
 
   useEffect(() => {
@@ -253,47 +259,70 @@ export default function App() {
   }
 
   function handleImageUpload(event) {
-  const file = event.target.files?.[0];
-  if (!file) return;
+    const file = event.target.files?.[0];
+    if (!file) return;
 
-  const img = new Image();
-  const reader = new FileReader();
+    setImageBusy(true);
 
-  reader.onload = () => {
-    img.onload = () => {
-      const maxWidth = 1600;
-      const maxHeight = 1600;
+    const img = new Image();
+    const reader = new FileReader();
 
-      let { width, height } = img;
+    reader.onload = () => {
+      img.onload = () => {
+        try {
+          const maxWidth = 1200;
+          const maxHeight = 1200;
 
-      if (width > maxWidth || height > maxHeight) {
-        const ratio = Math.min(maxWidth / width, maxHeight / height);
-        width = Math.round(width * ratio);
-        height = Math.round(height * ratio);
-      }
+          let { width, height } = img;
 
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
+          if (width > maxWidth || height > maxHeight) {
+            const ratio = Math.min(maxWidth / width, maxHeight / height);
+            width = Math.round(width * ratio);
+            height = Math.round(height * ratio);
+          }
 
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
 
-      ctx.drawImage(img, 0, 0, width, height);
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            setImageBusy(false);
+            alert("Could not process this image on your device.");
+            return;
+          }
 
-      const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.72);
+          ctx.drawImage(img, 0, 0, width, height);
 
-      setForm((prev) => ({
-        ...prev,
-        image: compressedDataUrl,
-      }));
+          const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.65);
+
+          setForm((prev) => ({
+            ...prev,
+            image: compressedDataUrl,
+          }));
+        } catch (error) {
+          console.error("Failed to compress image:", error);
+          alert("This image could not be processed. Try a smaller photo.");
+        } finally {
+          setImageBusy(false);
+        }
+      };
+
+      img.onerror = () => {
+        setImageBusy(false);
+        alert("This image could not be loaded.");
+      };
+
+      img.src = String(reader.result || "");
     };
 
-    img.src = String(reader.result || "");
-  };
+    reader.onerror = () => {
+      setImageBusy(false);
+      alert("This file could not be read.");
+    };
 
-  reader.readAsDataURL(file);
-}
+    reader.readAsDataURL(file);
+  }
 
   function clearImage() {
     setForm((prev) => ({
@@ -327,17 +356,22 @@ export default function App() {
       id: form.id || crypto.randomUUID(),
     };
 
-    setEntries((prev) => {
-      const exists = prev.some((item) => item.id === payload.id);
-      if (exists) {
-        return prev.map((item) => (item.id === payload.id ? payload : item));
-      }
-      return [payload, ...prev];
-    });
+    try {
+      setEntries((prev) => {
+        const exists = prev.some((item) => item.id === payload.id);
+        if (exists) {
+          return prev.map((item) => (item.id === payload.id ? payload : item));
+        }
+        return [payload, ...prev];
+      });
 
-    setForm(makeEmptyForm(form.type, form.date));
-    setEditorOpen(false);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+      setForm(makeEmptyForm(form.type, form.date));
+      setEditorOpen(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } catch (error) {
+      console.error("Failed to submit entry:", error);
+      alert("This entry could not be saved.");
+    }
   }
 
   function handleEdit(entry) {
@@ -469,7 +503,7 @@ export default function App() {
           </section>
 
           {editorOpen && (
-            <section className="mb-6 rounded-[28px] border border-[#ddd5c8] bg-[#fbf8f2]/96 p-4 sm:p-5 shadow-[0_10px_35px_rgba(81,64,40,0.05)]">
+            <section className="mb-6 rounded-[28px] border border-[#ddd5c8] bg-[#fbf8f2]/96 p-4 shadow-[0_10px_35px_rgba(81,64,40,0.05)] sm:p-5">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-[9px] uppercase tracking-[0.28em] text-[#8f816f]">
                   <ActiveIcon size={14} strokeWidth={1.8} />
@@ -583,17 +617,17 @@ export default function App() {
                           </div>
                         </div>
                       ) : (
-                        <label className="flex aspect-[4/3] cursor-pointer items-center justify-center p-6 text-center text-[#8d806f]">
+                        <div className="flex aspect-[4/3] items-center justify-center p-6 text-center text-[#8d806f]">
                           <div className="flex max-w-[260px] flex-col items-center gap-3">
                             <ImageIcon size={28} strokeWidth={1.7} />
                             <p className="text-[14px] leading-6 text-[#7a6e5f]">
                               Add a photo if this moment needs one.
                             </p>
-                        <span className="text-[10px] uppercase tracking-[0.26em] text-[#9a8c78]">
-  Optional photo
-</span>
+                            <span className="text-[10px] uppercase tracking-[0.26em] text-[#9a8c78]">
+                              Optional photo
+                            </span>
                           </div>
-                        </label>
+                        </div>
                       )}
 
                       <div className="border-t border-[#e3dbcf] p-4">
@@ -602,8 +636,14 @@ export default function App() {
                           type="file"
                           accept="image/*"
                           onChange={handleImageUpload}
-                          className="block w-full text-[13px] text-[#6c604f] file:mr-4 file:rounded-full file:border file:border-[#cdbfa8] file:bg-[#ece4d6] file:px-4 file:py-2 file:text-[11px] file:uppercase file:tracking-[0.22em] file:text-[#241e18]"
+                          disabled={imageBusy}
+                          className="block w-full text-[13px] text-[#6c604f] file:mr-4 file:rounded-full file:border file:border-[#cdbfa8] file:bg-[#ece4d6] file:px-4 file:py-2 file:text-[11px] file:uppercase file:tracking-[0.22em] file:text-[#241e18] disabled:opacity-60"
                         />
+                        {imageBusy && (
+                          <p className="mt-3 text-[12px] text-[#8a7c69]">
+                            Processing photo…
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -612,7 +652,8 @@ export default function App() {
                 <div className="flex gap-3 pt-1 lg:col-span-2">
                   <button
                     type="submit"
-                    className="flex-1 rounded-full border border-[#b8aa94] bg-[#ece4d6] px-5 py-3 text-[11px] uppercase tracking-[0.28em] text-[#241e18] transition hover:bg-[#e6dccb]"
+                    disabled={imageBusy}
+                    className="flex-1 rounded-full border border-[#b8aa94] bg-[#ece4d6] px-5 py-3 text-[11px] uppercase tracking-[0.28em] text-[#241e18] transition hover:bg-[#e6dccb] disabled:opacity-60"
                   >
                     {form.id ? "Save entry" : "Add entry"}
                   </button>
@@ -620,7 +661,8 @@ export default function App() {
                   <button
                     type="button"
                     onClick={resetForm}
-                    className="rounded-full border border-[#d8cfc2] bg-[#f7f2e8] px-5 py-3 text-[11px] uppercase tracking-[0.28em] text-[#7a6f5f] transition hover:bg-[#eee7da]"
+                    disabled={imageBusy}
+                    className="rounded-full border border-[#d8cfc2] bg-[#f7f2e8] px-5 py-3 text-[11px] uppercase tracking-[0.28em] text-[#7a6f5f] transition hover:bg-[#eee7da] disabled:opacity-60"
                   >
                     Clear
                   </button>
