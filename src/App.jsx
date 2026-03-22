@@ -14,7 +14,7 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 
-const STORAGE_KEY = "daily-frame-capture-mode-v2";
+const STORAGE_KEY = "daily-frame-capture-mode-v3";
 
 const TYPE_META = {
   Ride: { label: "RIDE", icon: Bike },
@@ -319,9 +319,7 @@ export default function App() {
 
   function handleDelete(id) {
     setEntries((prev) => prev.filter((item) => item.id !== id));
-    if (form.id === id) {
-      resetForm();
-    }
+    if (form.id === id) resetForm();
   }
 
   function placeholderTitle(type) {
@@ -461,55 +459,9 @@ export default function App() {
 
               <form
                 onSubmit={handleSubmit}
-                className="grid gap-5 lg:grid-cols-[0.95fr_1.05fr]"
+                className="grid gap-5 lg:grid-cols-[1fr_0.95fr]"
               >
-                <div className="order-1 lg:order-2">
-                  <div className="overflow-hidden rounded-[22px] border border-[#ddd4c8] bg-[#f7f2e8]">
-                    {form.image ? (
-                      <div className="relative aspect-[4/3] w-full">
-                        <img
-                          src={form.image}
-                          alt="Preview"
-                          className="h-full w-full object-cover"
-                        />
-                        <div className="absolute right-3 top-3">
-                          <button
-                            type="button"
-                            onClick={clearImage}
-                            className="rounded-full border border-white/60 bg-white/85 p-2 text-[#5f5447] shadow-sm transition hover:bg-white"
-                            title="Remove image"
-                          >
-                            <X size={14} strokeWidth={1.8} />
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <label className="flex aspect-[4/3] cursor-pointer items-center justify-center p-6 text-center text-[#8d806f]">
-                        <div className="flex max-w-[260px] flex-col items-center gap-3">
-                          <ImageIcon size={28} strokeWidth={1.7} />
-                          <p className="text-[14px] leading-6 text-[#7a6e5f]">
-                            Add a photo first and capture the moment.
-                          </p>
-                          <span className="rounded-full border border-[#cdbfa8] bg-[#ece4d6] px-4 py-2 text-[11px] uppercase tracking-[0.22em] text-[#241e18]">
-                            Choose image
-                          </span>
-                        </div>
-                      </label>
-                    )}
-
-                    <div className="border-t border-[#e3dbcf] p-4">
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        onChange={handleImageUpload}
-                        className="block w-full text-[13px] text-[#6c604f] file:mr-4 file:rounded-full file:border file:border-[#cdbfa8] file:bg-[#ece4d6] file:px-4 file:py-2 file:text-[11px] file:uppercase file:tracking-[0.22em] file:text-[#241e18]"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="order-2 space-y-4 lg:order-1">
+                <div className="space-y-4">
                   <div>
                     <label className="mb-2 block text-[10px] uppercase tracking-[0.32em] text-[#8f816f]">
                       Title
@@ -574,23 +526,75 @@ export default function App() {
                       className="w-full rounded-[18px] border border-[#ddd4c8] bg-[#f8f4ec] px-4 py-3 text-[15px] text-[#2a241d] outline-none transition placeholder:text-[#af9f8a] focus:border-[#bcae97]"
                     />
                   </div>
+                </div>
 
-                  <div className="flex gap-3 pt-2">
-                    <button
-                      type="submit"
-                      className="flex-1 rounded-full border border-[#b8aa94] bg-[#ece4d6] px-5 py-3 text-[11px] uppercase tracking-[0.28em] text-[#241e18] transition hover:bg-[#e6dccb]"
-                    >
-                      {form.id ? "Save entry" : "Add entry"}
-                    </button>
+                <div className="space-y-4">
+                  <div>
+                    <label className="mb-2 block text-[10px] uppercase tracking-[0.32em] text-[#8f816f]">
+                      Photo
+                    </label>
 
-                    <button
-                      type="button"
-                      onClick={resetForm}
-                      className="rounded-full border border-[#d8cfc2] bg-[#f7f2e8] px-5 py-3 text-[11px] uppercase tracking-[0.28em] text-[#7a6f5f] transition hover:bg-[#eee7da]"
-                    >
-                      Clear
-                    </button>
+                    <div className="overflow-hidden rounded-[22px] border border-[#ddd4c8] bg-[#f7f2e8]">
+                      {form.image ? (
+                        <div className="relative aspect-[4/3] w-full">
+                          <img
+                            src={form.image}
+                            alt="Preview"
+                            className="h-full w-full object-cover"
+                          />
+                          <div className="absolute right-3 top-3">
+                            <button
+                              type="button"
+                              onClick={clearImage}
+                              className="rounded-full border border-white/60 bg-white/85 p-2 text-[#5f5447] shadow-sm transition hover:bg-white"
+                              title="Remove image"
+                            >
+                              <X size={14} strokeWidth={1.8} />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <label className="flex aspect-[4/3] cursor-pointer items-center justify-center p-6 text-center text-[#8d806f]">
+                          <div className="flex max-w-[260px] flex-col items-center gap-3">
+                            <ImageIcon size={28} strokeWidth={1.7} />
+                            <p className="text-[14px] leading-6 text-[#7a6e5f]">
+                              Add a photo if this moment needs one.
+                            </p>
+                            <span className="rounded-full border border-[#cdbfa8] bg-[#ece4d6] px-4 py-2 text-[11px] uppercase tracking-[0.22em] text-[#241e18]">
+                              Choose image
+                            </span>
+                          </div>
+                        </label>
+                      )}
+
+                      <div className="border-t border-[#e3dbcf] p-4">
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleImageUpload}
+                          className="block w-full text-[13px] text-[#6c604f] file:mr-4 file:rounded-full file:border file:border-[#cdbfa8] file:bg-[#ece4d6] file:px-4 file:py-2 file:text-[11px] file:uppercase file:tracking-[0.22em] file:text-[#241e18]"
+                        />
+                      </div>
+                    </div>
                   </div>
+                </div>
+
+                <div className="lg:col-span-2 flex gap-3 pt-1">
+                  <button
+                    type="submit"
+                    className="flex-1 rounded-full border border-[#b8aa94] bg-[#ece4d6] px-5 py-3 text-[11px] uppercase tracking-[0.28em] text-[#241e18] transition hover:bg-[#e6dccb]"
+                  >
+                    {form.id ? "Save entry" : "Add entry"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={resetForm}
+                    className="rounded-full border border-[#d8cfc2] bg-[#f7f2e8] px-5 py-3 text-[11px] uppercase tracking-[0.28em] text-[#7a6f5f] transition hover:bg-[#eee7da]"
+                  >
+                    Clear
+                  </button>
                 </div>
               </form>
             </section>
