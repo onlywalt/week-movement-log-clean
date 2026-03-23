@@ -374,7 +374,7 @@ export default function App() {
   const previewImage = editor.photoPreview || existingPhotoURL;
 
   return (
-    <div className="min-h-screen bg-neutral-100 text-neutral-900">
+    <div className="min-h-screen text-neutral-900 bg-leica">
       <div className="mx-auto max-w-5xl px-4 pb-12 pt-5 sm:px-6 lg:px-8">
         <header className="mb-5 rounded-[28px] border border-neutral-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="mb-3 flex items-start justify-between gap-4">

@@ -182,3 +182,15 @@
     border-right-color: var(--border);
   }
 }
+/* Leica + Rapha paper background */
+.bg-leica {
+  background-color: #f3f2ef;
+
+  background-image: radial-gradient(
+    circle,
+    rgba(0, 0, 0, 0.035) 1px,
+    transparent 1px
+  );
+
+  background-size: 20px 20px;
+}
