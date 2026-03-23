@@ -191,6 +191,8 @@ export default function App() {
   const [editorOpen, setEditorOpen] = useState(true);
   const [form, setForm] = useState(makeEmptyForm("Ride", todayString()));
   const [imageBusy, setImageBusy] = useState(false);
+  const [imageStatus, setImageStatus] = useState("");
+  const [localPreview, setLocalPreview] = useState("");
   const [loading, setLoading] = useState(true);
 
   const fileInputRef = useRef(null);
@@ -245,6 +247,9 @@ export default function App() {
   }, [entries]);
 
   const hasEntries = filteredEntries.length > 0;
+  const meta = TYPE_META[form.type] || TYPE_META.Notes;
+  const ActiveIcon = meta.icon;
+  const previewSrc = form.image || localPreview;
 
   function handleChange(field, value) {
     setForm((prev) => ({
@@ -264,7 +269,24 @@ export default function App() {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    const lowerName = file.name.toLowerCase();
+
+    if (
+      !file.type.startsWith("image/") ||
+      lowerName.endsWith(".dng")
+    ) {
+      alert("RAW (.DNG) photos are not supported yet. Please use JPG, PNG, WEBP, or standard phone photo output.");
+      return;
+    }
+
+    if (localPreview) {
+      URL.revokeObjectURL(localPreview);
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    setLocalPreview(objectUrl);
     setImageBusy(true);
+    setImageStatus("Preparing photo…");
 
     try {
       const img = new Image();
@@ -279,8 +301,8 @@ export default function App() {
       img.src = dataUrl;
 
       await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("This image could not be loaded."));
       });
 
       const maxWidth = 1600;
@@ -300,7 +322,7 @@ export default function App() {
 
       const ctx = canvas.getContext("2d");
       if (!ctx) {
-        throw new Error("Canvas not supported");
+        throw new Error("Canvas is not supported on this device.");
       }
 
       ctx.drawImage(img, 0, 0, width, height);
@@ -310,12 +332,14 @@ export default function App() {
       );
 
       if (!blob) {
-        throw new Error("Failed to create compressed image");
+        throw new Error("Failed to prepare compressed image.");
       }
 
       const safeFile = new File([blob], `${Date.now()}.jpg`, {
         type: "image/jpeg",
       });
+
+      setImageStatus("Uploading photo…");
 
       const { url, path } = await uploadEntryPhoto(safeFile);
 
@@ -324,9 +348,16 @@ export default function App() {
         image: url,
         imagePath: path,
       }));
+
+      setImageStatus("Photo ready");
     } catch (error) {
       console.error("Failed to upload image:", error);
-      alert("This phone photo could not be uploaded. Try again.");
+      setImageStatus("");
+      if (localPreview) {
+        URL.revokeObjectURL(localPreview);
+      }
+      setLocalPreview("");
+      alert(error.message || "This image could not be uploaded. Try again.");
     } finally {
       setImageBusy(false);
     }
@@ -337,6 +368,13 @@ export default function App() {
       if (form.imagePath) {
         await deleteEntryPhoto(form.imagePath);
       }
+
+      if (localPreview) {
+        URL.revokeObjectURL(localPreview);
+      }
+
+      setLocalPreview("");
+      setImageStatus("");
 
       setForm((prev) => ({
         ...prev,
@@ -352,9 +390,16 @@ export default function App() {
   }
 
   function resetForm() {
+    if (localPreview) {
+      URL.revokeObjectURL(localPreview);
+    }
+
+    setLocalPreview("");
+    setImageStatus("");
     setForm(
       makeEmptyForm(form.type, view === "today" ? todayString() : selectedDate)
     );
+
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -393,6 +438,12 @@ export default function App() {
       const refreshed = await fetchEntries();
       setEntries(refreshed);
 
+      if (localPreview) {
+        URL.revokeObjectURL(localPreview);
+      }
+
+      setLocalPreview("");
+      setImageStatus("");
       setForm(makeEmptyForm(form.type, form.date));
       setEditorOpen(false);
 
@@ -404,6 +455,11 @@ export default function App() {
   }
 
   function handleEdit(entry) {
+    if (localPreview) {
+      URL.revokeObjectURL(localPreview);
+    }
+    setLocalPreview("");
+    setImageStatus("");
     setForm({ ...entry });
     setEditorOpen(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -433,9 +489,6 @@ export default function App() {
     if (type === "Cafe") return "Cafe name";
     return "Quick title";
   }
-
-  const meta = TYPE_META[form.type] || TYPE_META.Notes;
-  const ActiveIcon = meta.icon;
 
   return (
     <div className="min-h-screen bg-[#f4f0e8] text-[#2a241d]">
@@ -640,10 +693,10 @@ export default function App() {
                     </label>
 
                     <div className="overflow-hidden rounded-[22px] border border-[#ddd4c8] bg-[#f7f2e8]">
-                      {form.image ? (
+                      {previewSrc ? (
                         <div className="relative aspect-[4/3] w-full">
                           <img
-                            src={form.image}
+                            src={previewSrc}
                             alt="Preview"
                             className="h-full w-full object-cover"
                           />
@@ -681,9 +734,9 @@ export default function App() {
                           disabled={imageBusy}
                           className="block w-full text-[13px] text-[#6c604f] file:mr-4 file:rounded-full file:border file:border-[#cdbfa8] file:bg-[#ece4d6] file:px-4 file:py-2 file:text-[11px] file:uppercase file:tracking-[0.22em] file:text-[#241e18] disabled:opacity-60"
                         />
-                        {imageBusy && (
+                        {imageStatus && (
                           <p className="mt-3 text-[12px] text-[#8a7c69]">
-                            Uploading photo…
+                            {imageStatus}
                           </p>
                         )}
                       </div>
