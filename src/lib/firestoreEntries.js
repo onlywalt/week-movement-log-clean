@@ -44,18 +44,4 @@ export async function updateEntry(id, updates) {
 export async function deleteEntry(id) {
   const ref = doc(db, "entries", id);
   await deleteDoc(ref);
-
-}
-
-export async function updateEntry(id, updates) {
-  const ref = doc(db, "entries", id);
-  await updateDoc(ref, {
-    ...updates,
-    updatedAt: serverTimestamp(),
-  });
-}
-
-export async function deleteEntry(id) {
-  const ref = doc(db, "entries", id);
-  await deleteDoc(ref);
 }
