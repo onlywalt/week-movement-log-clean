@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { uploadEntryPhoto, deleteEntryPhoto } from "./lib/storage";
 import {
   fetchEntries,
   addEntry,
@@ -19,8 +20,6 @@ import {
   X,
   Image as ImageIcon,
 } from "lucide-react";
-
-const STORAGE_KEY = "daily-frame-capture-mode-v5";
 
 const TYPE_META = {
   Ride: { label: "RIDE", icon: Bike },
@@ -50,6 +49,7 @@ function makeEmptyForm(type = "Ride", date = todayString()) {
     date,
     time: nowTimeString(),
     image: "",
+    imagePath: "",
   };
 }
 
@@ -191,59 +191,25 @@ export default function App() {
   const [editorOpen, setEditorOpen] = useState(true);
   const [form, setForm] = useState(makeEmptyForm("Ride", todayString()));
   const [imageBusy, setImageBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const fileInputRef = useRef(null);
 
-useEffect(() => {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
-  } catch (error) {
-    console.error("Failed to save entries:", error);
-    alert("This photo is too large to save on this device. Try a smaller photo.");
-  }
-}, [entries]);
-
- async function handleSubmit(e) {
-  e.preventDefault();
-
-  const cleanTitle = form.title.trim();
-  const cleanPlace = form.place.trim();
-  const cleanNote = form.note.trim();
-
-  if (!cleanTitle && !cleanPlace && !cleanNote) return;
-
-  const payload = {
-    ...form,
-    title: cleanTitle,
-    place: cleanPlace,
-    note: cleanNote,
-  };
-
-  try {
-    if (form.id) {
-      // UPDATE
-      await updateEntry(form.id, payload);
-
-      setEntries((prev) =>
-        prev.map((item) =>
-          item.id === form.id ? { ...item, ...payload } : item
-        )
-      );
-    } else {
-      // ADD
-      const id = await addEntry(payload);
-
-      setEntries((prev) => [{ id, ...payload }, ...prev]);
+  useEffect(() => {
+    async function load() {
+      try {
+        const data = await fetchEntries();
+        setEntries(data);
+      } catch (error) {
+        console.error("Failed to load entries:", error);
+      } finally {
+        setLoading(false);
+      }
     }
 
-    setForm(makeEmptyForm(form.type, form.date));
-    setEditorOpen(false);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  } catch (error) {
-    console.error("Failed to submit entry:", error);
-    alert("This entry could not be saved.");
-  }
-}
+    load();
+  }, []);
+
   useEffect(() => {
     setForm((prev) => ({
       ...prev,
@@ -294,78 +260,45 @@ useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function handleImageUpload(event) {
+  async function handleImageUpload(event) {
     const file = event.target.files?.[0];
     if (!file) return;
 
     setImageBusy(true);
 
-    const img = new Image();
-    const reader = new FileReader();
+    try {
+      const { url, path } = await uploadEntryPhoto(file);
 
-    reader.onload = () => {
-      img.onload = () => {
-        try {
-          const maxWidth = 1200;
-          const maxHeight = 1200;
-
-          let { width, height } = img;
-
-          if (width > maxWidth || height > maxHeight) {
-            const ratio = Math.min(maxWidth / width, maxHeight / height);
-            width = Math.round(width * ratio);
-            height = Math.round(height * ratio);
-          }
-
-          const canvas = document.createElement("canvas");
-          canvas.width = width;
-          canvas.height = height;
-
-          const ctx = canvas.getContext("2d");
-          if (!ctx) {
-            setImageBusy(false);
-            alert("Could not process this image on your device.");
-            return;
-          }
-
-          ctx.drawImage(img, 0, 0, width, height);
-
-          const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.65);
-
-          setForm((prev) => ({
-            ...prev,
-            image: compressedDataUrl,
-          }));
-        } catch (error) {
-          console.error("Failed to compress image:", error);
-          alert("This image could not be processed. Try a smaller photo.");
-        } finally {
-          setImageBusy(false);
-        }
-      };
-
-      img.onerror = () => {
-        setImageBusy(false);
-        alert("This image could not be loaded.");
-      };
-
-      img.src = String(reader.result || "");
-    };
-
-    reader.onerror = () => {
+      setForm((prev) => ({
+        ...prev,
+        image: url,
+        imagePath: path,
+      }));
+    } catch (error) {
+      console.error("Failed to upload image:", error);
+      alert("This image could not be uploaded.");
+    } finally {
       setImageBusy(false);
-      alert("This file could not be read.");
-    };
-
-    reader.readAsDataURL(file);
+    }
   }
 
-  function clearImage() {
-    setForm((prev) => ({
-      ...prev,
-      image: "",
-    }));
-    if (fileInputRef.current) fileInputRef.current.value = "";
+  async function clearImage() {
+    try {
+      if (form.imagePath) {
+        await deleteEntryPhoto(form.imagePath);
+      }
+
+      setForm((prev) => ({
+        ...prev,
+        image: "",
+        imagePath: "",
+      }));
+
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } catch (error) {
+      console.error("Failed to remove image:", error);
+      alert("Could not remove image.");
+    }
   }
 
   function resetForm() {
@@ -375,7 +308,7 @@ useEffect(() => {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
 
     const cleanTitle = form.title.trim();
@@ -389,20 +322,25 @@ useEffect(() => {
       title: cleanTitle,
       place: cleanPlace,
       note: cleanNote,
-      id: form.id || crypto.randomUUID(),
     };
 
     try {
-      setEntries((prev) => {
-        const exists = prev.some((item) => item.id === payload.id);
-        if (exists) {
-          return prev.map((item) => (item.id === payload.id ? payload : item));
-        }
-        return [payload, ...prev];
-      });
+      if (form.id) {
+        await updateEntry(form.id, payload);
+
+        setEntries((prev) =>
+          prev.map((item) =>
+            item.id === form.id ? { ...item, ...payload } : item
+          )
+        );
+      } else {
+        const id = await addEntry(payload);
+        setEntries((prev) => [{ id, ...payload }, ...prev]);
+      }
 
       setForm(makeEmptyForm(form.type, form.date));
       setEditorOpen(false);
+
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (error) {
       console.error("Failed to submit entry:", error);
@@ -416,17 +354,23 @@ useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-async function handleDelete(id) {
-  try {
-    await deleteEntry(id); // 🔥 delete from Firebase
+  async function handleDelete(id) {
+    try {
+      const entryToDelete = entries.find((item) => item.id === id);
 
-    setEntries((prev) => prev.filter((item) => item.id !== id)); // update UI
+      if (entryToDelete?.imagePath) {
+        await deleteEntryPhoto(entryToDelete.imagePath);
+      }
 
-    if (form.id === id) resetForm();
-  } catch (error) {
-    console.error("Failed to delete:", error);
+      await deleteEntry(id);
+      setEntries((prev) => prev.filter((item) => item.id !== id));
+
+      if (form.id === id) resetForm();
+    } catch (error) {
+      console.error("Failed to delete:", error);
+      alert("Could not delete entry.");
+    }
   }
-}
 
   function placeholderTitle(type) {
     if (type === "Ride") return "Morning loop";
@@ -684,7 +628,7 @@ async function handleDelete(id) {
                         />
                         {imageBusy && (
                           <p className="mt-3 text-[12px] text-[#8a7c69]">
-                            Processing photo…
+                            Uploading photo…
                           </p>
                         )}
                       </div>
@@ -731,7 +675,16 @@ async function handleDelete(id) {
               )}
             </div>
 
-            {hasEntries ? (
+            {loading ? (
+              <div className="rounded-[26px] border border-dashed border-[#d5ccbf] bg-[#f8f4ec]/90 px-6 py-16 text-center shadow-[0_8px_24px_rgba(81,64,40,0.03)]">
+                <p className="text-[10px] uppercase tracking-[0.34em] text-[#9b8e7d]">
+                  Loading
+                </p>
+                <p className="mt-3 text-[16px] text-[#6f6354]">
+                  Fetching your entries from Firebase.
+                </p>
+              </div>
+            ) : hasEntries ? (
               <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
                 {filteredEntries.map((entry) => (
                   <EntryCard
