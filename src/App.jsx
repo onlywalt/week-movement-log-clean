@@ -12,6 +12,7 @@ import {
   LoaderCircle,
   MapPin,
   Pencil,
+  Search,
   Trash2,
   X,
 } from "lucide-react";
@@ -28,7 +29,7 @@ const TYPES = [
   { name: "Ride", icon: Bike },
   { name: "Walk", icon: Footprints },
   { name: "Cafe", icon: Coffee },
-  { name: "Journal", icon: BookOpen },
+  { name: "Notes", icon: BookOpen },
 ];
 
 const todayString = () => new Date().toISOString().slice(0, 10);
@@ -56,7 +57,7 @@ function classNames(...items) {
   return items.filter(Boolean).join(" ");
 }
 
-function formatEntryDate(dateString) {
+function formatHeaderDate(dateString) {
   if (!dateString) return "";
   const d = new Date(`${dateString}T00:00:00`);
   return d.toLocaleDateString(undefined, {
@@ -64,6 +65,16 @@ function formatEntryDate(dateString) {
     month: "short",
     day: "numeric",
     year: "numeric",
+  });
+}
+
+function formatCardDate(dateString) {
+  if (!dateString) return "";
+  const d = new Date(`${dateString}T00:00:00`);
+  return d.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
   });
 }
 
@@ -86,9 +97,9 @@ function EntryCard({ entry, onEdit, onDelete }) {
     TYPES.find((item) => item.name === entry.type)?.icon || BookOpen;
 
   return (
-    <article className="overflow-hidden rounded-3xl border border-neutral-200/60 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+    <article className="overflow-hidden rounded-[28px] border border-[#ded7ca] bg-[#f8f5ee] shadow-[0_1px_2px_rgba(80,66,38,0.04)]">
       {entry.photoURL ? (
-        <div className="aspect-[4/3] w-full overflow-hidden bg-neutral-100">
+        <div className="aspect-[1.18/1] w-full overflow-hidden rounded-b-none rounded-t-[28px] bg-[#ece7dc]">
           <img
             src={entry.photoURL}
             alt={entry.title || entry.type}
@@ -96,74 +107,74 @@ function EntryCard({ entry, onEdit, onDelete }) {
             loading="lazy"
           />
         </div>
-      ) : null}
+      ) : (
+        <div className="aspect-[1.18/1] w-full rounded-b-none rounded-t-[28px] bg-[#ece7dc]" />
+      )}
 
-      <div className="p-4 sm:p-5">
-        <div className="mb-3 flex items-start justify-between gap-3">
+      <div className="px-6 pb-4 pt-5">
+        <div className="mb-4 flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <div className="mb-1 flex items-center gap-2 text-[10px] uppercase tracking-[0.24em] text-neutral-500">
-              <Icon size={13} />
+            <div className="mb-3 flex items-center gap-2 text-[10px] uppercase tracking-[0.26em] text-[#b3a688]">
+              <Icon size={12} strokeWidth={1.8} />
               <span>{entry.type || "Entry"}</span>
             </div>
 
-            <h3 className="truncate text-base font-medium text-neutral-800">
+            <h3 className="mb-3 text-[1.05rem] font-normal leading-7 text-[#6f624f]">
               {entry.title || "Untitled entry"}
             </h3>
+
+            <p className="min-h-[3.25rem] whitespace-pre-wrap text-[0.95rem] leading-8 text-[#8f816b]">
+              {entry.note || " "}
+            </p>
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-2 pt-0.5">
             <button
               type="button"
               onClick={() => onEdit(entry)}
-              className="rounded-full p-2 text-neutral-500 transition hover:bg-neutral-100 hover:text-neutral-800"
+              className="rounded-full border border-[#ddd4c4] bg-[#f8f5ee] p-2 text-[#b1a184] transition hover:bg-[#f2ede3] hover:text-[#7d705c]"
               aria-label="Edit entry"
               title="Edit entry"
             >
-              <Pencil size={16} />
+              <Pencil size={15} strokeWidth={1.8} />
             </button>
 
             <button
               type="button"
               onClick={() => onDelete(entry)}
-              className="rounded-full p-2 text-neutral-500 transition hover:bg-neutral-100 hover:text-neutral-800"
+              className="rounded-full border border-[#ddd4c4] bg-[#f8f5ee] p-2 text-[#b1a184] transition hover:bg-[#f2ede3] hover:text-[#7d705c]"
               aria-label="Delete entry"
               title="Delete entry"
             >
-              <Trash2 size={16} />
+              <Trash2 size={15} strokeWidth={1.8} />
             </button>
           </div>
         </div>
 
-        <div className="mb-3 flex flex-wrap gap-2 text-[11px] text-neutral-500">
-          {entry.date ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2.5 py-1">
-              <CalendarDays size={12} />
-              {formatEntryDate(entry.date)}
-            </span>
-          ) : null}
+        <div className="mt-4 border-t border-[#e8e0d4] pt-3 text-[10px] uppercase tracking-[0.22em] text-[#b9ad92]">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            {entry.date ? (
+              <span className="inline-flex items-center gap-1.5">
+                <CalendarDays size={11} strokeWidth={1.8} />
+                {formatCardDate(entry.date)}
+              </span>
+            ) : null}
 
-          {entry.time ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2.5 py-1">
-              <Clock3 size={12} />
-              {formatTimeLabel(entry.time)}
-            </span>
-          ) : null}
+            {entry.time ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Clock3 size={11} strokeWidth={1.8} />
+                {formatTimeLabel(entry.time)}
+              </span>
+            ) : null}
 
-          {entry.place ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2.5 py-1">
-              <MapPin size={12} />
-              {entry.place}
-            </span>
-          ) : null}
+            {entry.place ? (
+              <span className="inline-flex items-center gap-1.5">
+                <MapPin size={11} strokeWidth={1.8} />
+                {entry.place}
+              </span>
+            ) : null}
+          </div>
         </div>
-
-        {entry.note ? (
-          <p className="whitespace-pre-wrap text-sm leading-6 text-neutral-700">
-            {entry.note}
-          </p>
-        ) : (
-          <p className="text-sm text-neutral-400">No note for this entry yet.</p>
-        )}
       </div>
     </article>
   );
@@ -173,6 +184,7 @@ export default function App() {
   const [entries, setEntries] = useState([]);
   const [loadingEntries, setLoadingEntries] = useState(true);
   const [syncError, setSyncError] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const [editor, setEditor] = useState(emptyEditor());
   const [activeView, setActiveView] = useState("today");
@@ -209,14 +221,25 @@ export default function App() {
     };
   }, [editor.photoPreview]);
 
-  const displayedEntries = useMemo(() => {
-    const targetDate = activeView === "today" ? todayString() : selectedDate;
+  const targetDate = activeView === "today" ? todayString() : selectedDate;
 
-    return entries.filter((entry) => {
-      if (!entry.date) return false;
-      return entry.date.slice(0, 10) === targetDate;
-    });
-  }, [entries, activeView, selectedDate]);
+  const displayedEntries = useMemo(() => {
+    return entries
+      .filter((entry) => {
+        if (!entry.date) return false;
+        return entry.date.slice(0, 10) === targetDate;
+      })
+      .filter((entry) => {
+        if (!searchQuery.trim()) return true;
+        const q = searchQuery.toLowerCase();
+        return (
+          (entry.title || "").toLowerCase().includes(q) ||
+          (entry.note || "").toLowerCase().includes(q) ||
+          (entry.place || "").toLowerCase().includes(q) ||
+          (entry.type || "").toLowerCase().includes(q)
+        );
+      });
+  }, [entries, targetDate, searchQuery]);
 
   const totalToday = useMemo(() => {
     return entries.filter(
@@ -294,7 +317,6 @@ export default function App() {
       removePhoto: false,
     });
 
-    setActiveView("today");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -352,8 +374,10 @@ export default function App() {
         nextPhotoPath = "";
       }
 
+      const normalizedType = editor.type === "Journal" ? "Notes" : editor.type;
+
       const payload = {
-        type: editor.type,
+        type: normalizedType,
         title: cleanTitle,
         note: cleanNote,
         date: editor.date,
@@ -381,115 +405,108 @@ export default function App() {
   const previewImage = editor.photoPreview || existingPhotoURL;
 
   return (
-    <div className="min-h-screen bg-leica text-neutral-900">
-      <div className="mx-auto max-w-5xl px-4 pb-12 pt-5 sm:px-6 lg:px-8">
-        <header className="mb-5 rounded-[28px] border border-neutral-200/60 bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.03)] sm:p-6">
-          <div className="mb-3 flex items-start justify-between gap-4">
-            <div className="max-w-[38rem]">
-              <p className="mb-3 text-[11px] uppercase tracking-[0.28em] text-neutral-400">
-                Daily Frame
-              </p>
-              <h1 className="max-w-[12ch] text-[2.15rem] leading-[1.08] font-medium tracking-[-0.03em] text-neutral-800 sm:max-w-none sm:text-[3rem]">
-                Ride the day. Keep the moment.
+    <div className="min-h-screen bg-leica text-[#4e4435]">
+      <div className="mx-auto max-w-[1280px] px-3 pb-12 pt-3 sm:px-5 lg:px-6">
+        <header className="mb-6 rounded-[30px] border border-[#ddd4c4] bg-[#f8f5ee] px-7 py-7 shadow-[0_1px_2px_rgba(80,66,38,0.04)]">
+          <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h1 className="mb-1 text-[2.05rem] font-medium leading-tight text-[#3f372d]">
+                Daily Frame.
               </h1>
-            </div>
-
-            <div className="rounded-2xl border border-neutral-200/60 bg-white px-3 py-2 text-right">
-              <div className="text-[11px] uppercase tracking-[0.22em] text-neutral-400">
-                Today
+              <div className="mb-5 text-[11px] uppercase tracking-[0.36em] text-[#a69473]">
+                Ride | Time | Place
               </div>
-              <div className="text-lg font-medium text-neutral-800">
-                {totalToday}
-              </div>
+              <p className="text-[1.08rem] italic leading-8 text-[#8f816b]">
+                Ride the day. Keep the moment.
+              </p>
             </div>
-          </div>
 
-          <div className="max-w-[42rem] text-[15px] leading-8 text-neutral-500">
-            A quiet record of rides, walks, cafes, and small moments — now with
-            live sync across devices.
-          </div>
-
-          {syncError ? (
-            <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {syncError}
-            </div>
-          ) : null}
-        </header>
-
-        <section className="mb-5 rounded-[28px] border border-neutral-200/60 bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.03)] sm:p-5">
-          <div className="mb-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {TYPES.map(({ name, icon: Icon }) => (
+            <div className="flex gap-2 self-start">
               <button
-                key={name}
                 type="button"
-                onClick={() => handleField("type", name)}
+                onClick={() => setActiveView("today")}
                 className={classNames(
-                  "inline-flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm transition",
-                  editor.type === name
-                    ? "bg-neutral-800 text-white/90 hover:bg-neutral-700"
-                    : "border border-neutral-200/70 bg-white text-neutral-600 hover:bg-neutral-50"
+                  "rounded-full border px-6 py-3 text-[12px] uppercase tracking-[0.28em] transition",
+                  activeView === "today"
+                    ? "border-[#cfc2aa] bg-[#eee5d2] text-[#8c7b5f]"
+                    : "border-[#ddd4c4] bg-[#f8f5ee] text-[#b19f84] hover:bg-[#f4efe5]"
                 )}
               >
-                <Icon size={16} />
-                {name}
+                Today
               </button>
-            ))}
+
+              <button
+                type="button"
+                onClick={() => setActiveView("history")}
+                className={classNames(
+                  "rounded-full border px-6 py-3 text-[12px] uppercase tracking-[0.28em] transition",
+                  activeView === "history"
+                    ? "border-[#cfc2aa] bg-[#eee5d2] text-[#8c7b5f]"
+                    : "border-[#ddd4c4] bg-[#f8f5ee] text-[#b19f84] hover:bg-[#f4efe5]"
+                )}
+              >
+                History
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <section className="mb-6 rounded-[30px] border border-[#ddd4c4] bg-[#f8f5ee] p-5 shadow-[0_1px_2px_rgba(80,66,38,0.04)]">
+          <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="hide-scrollbar flex gap-2 overflow-x-auto pb-1">
+              {TYPES.map(({ name, icon: Icon }) => (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => handleField("type", name)}
+                  className={classNames(
+                    "inline-flex shrink-0 items-center gap-2 rounded-full border px-5 py-3 text-[12px] uppercase tracking-[0.28em] transition",
+                    editor.type === name
+                      ? "border-[#cfc2aa] bg-[#eee5d2] text-[#8c7b5f]"
+                      : "border-[#ddd4c4] bg-[#f8f5ee] text-[#9e8d73] hover:bg-[#f4efe5]"
+                  )}
+                >
+                  <Icon size={14} strokeWidth={1.8} />
+                  {name}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <div className="rounded-full border border-[#ddd4c4] bg-[#f8f5ee] px-6 py-3 text-[12px] uppercase tracking-[0.28em] text-[#a59376]">
+                {formatHeaderDate(targetDate)}
+              </div>
+
+              <label className="flex min-w-[250px] items-center gap-3 rounded-full border border-[#ddd4c4] bg-[#f8f5ee] px-5 py-3 text-[#a59376]">
+                <Search size={16} strokeWidth={1.8} />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search entries"
+                  className="w-full bg-transparent text-[15px] text-[#7f725f] outline-none placeholder:text-[#b7a88f]"
+                />
+              </label>
+            </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="mb-1 block text-xs uppercase tracking-[0.22em] text-neutral-500">
-                Title
-              </label>
-              <input
-                type="text"
-                value={editor.title}
-                onChange={(e) => handleField("title", e.target.value)}
-                placeholder="Add a title"
-                className="w-full rounded-2xl border border-neutral-200/70 bg-white px-4 py-3 text-sm text-neutral-900 outline-none transition focus:border-neutral-400"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-xs uppercase tracking-[0.22em] text-neutral-500">
-                Note
-              </label>
-              <textarea
-                value={editor.note}
-                onChange={(e) => handleField("note", e.target.value)}
-                placeholder="Add a short note"
-                rows={4}
-                className="w-full rounded-2xl border border-neutral-200/70 bg-white px-4 py-3 text-sm text-neutral-900 outline-none transition focus:border-neutral-400"
-              />
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="grid gap-5 lg:grid-cols-[1.1fr_1fr]">
               <div>
-                <label className="mb-1 block text-xs uppercase tracking-[0.22em] text-neutral-500">
-                  Date
+                <label className="mb-2 block text-[11px] uppercase tracking-[0.34em] text-[#9f8d73]">
+                  Title
                 </label>
                 <input
-                  type="date"
-                  value={editor.date}
-                  onChange={(e) => handleField("date", e.target.value)}
-                  className="w-full rounded-2xl border border-neutral-200/70 bg-white px-4 py-3 text-sm text-neutral-900 outline-none transition focus:border-neutral-400"
+                  type="text"
+                  value={editor.title}
+                  onChange={(e) => handleField("title", e.target.value)}
+                  placeholder="Add a title"
+                  className="w-full rounded-[24px] border border-[#ddd4c4] bg-[#fbf9f3] px-6 py-4 text-[1rem] text-[#675b49] outline-none transition placeholder:text-[#b3a691] focus:border-[#cfc2aa]"
                 />
               </div>
 
               <div>
-                <label className="mb-1 block text-xs uppercase tracking-[0.22em] text-neutral-500">
-                  Time
-                </label>
-                <input
-                  type="time"
-                  value={editor.time}
-                  onChange={(e) => handleField("time", e.target.value)}
-                  className="w-full rounded-2xl border border-neutral-200/70 bg-white px-4 py-3 text-sm text-neutral-900 outline-none transition focus:border-neutral-400"
-                />
-              </div>
-
-              <div className="sm:col-span-2 lg:col-span-1">
-                <label className="mb-1 block text-xs uppercase tracking-[0.22em] text-neutral-500">
+                <label className="mb-2 block text-[11px] uppercase tracking-[0.34em] text-[#9f8d73]">
                   Place
                 </label>
                 <input
@@ -497,19 +514,58 @@ export default function App() {
                   value={editor.place}
                   onChange={(e) => handleField("place", e.target.value)}
                   placeholder="Where was this?"
-                  className="w-full rounded-2xl border border-neutral-200/70 bg-white px-4 py-3 text-sm text-neutral-900 outline-none transition focus:border-neutral-400"
+                  className="w-full rounded-[24px] border border-[#ddd4c4] bg-[#fbf9f3] px-6 py-4 text-[1rem] text-[#675b49] outline-none transition placeholder:text-[#b3a691] focus:border-[#cfc2aa]"
                 />
               </div>
             </div>
 
             <div>
-              <label className="mb-2 block text-xs uppercase tracking-[0.22em] text-neutral-500">
+              <label className="mb-2 block text-[11px] uppercase tracking-[0.34em] text-[#9f8d73]">
+                Note
+              </label>
+              <textarea
+                value={editor.note}
+                onChange={(e) => handleField("note", e.target.value)}
+                placeholder="Add a short note"
+                rows={5}
+                className="w-full rounded-[24px] border border-[#ddd4c4] bg-[#fbf9f3] px-6 py-5 text-[1rem] leading-8 text-[#675b49] outline-none transition placeholder:text-[#b3a691] focus:border-[#cfc2aa]"
+              />
+            </div>
+
+            <div className="grid gap-5 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-[11px] uppercase tracking-[0.34em] text-[#9f8d73]">
+                  Date
+                </label>
+                <input
+                  type="date"
+                  value={editor.date}
+                  onChange={(e) => handleField("date", e.target.value)}
+                  className="w-full rounded-[24px] border border-[#ddd4c4] bg-[#fbf9f3] px-6 py-4 text-[1rem] text-[#675b49] outline-none transition focus:border-[#cfc2aa]"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-[11px] uppercase tracking-[0.34em] text-[#9f8d73]">
+                  Time
+                </label>
+                <input
+                  type="time"
+                  value={editor.time}
+                  onChange={(e) => handleField("time", e.target.value)}
+                  className="w-full rounded-[24px] border border-[#ddd4c4] bg-[#fbf9f3] px-6 py-4 text-[1rem] text-[#675b49] outline-none transition focus:border-[#cfc2aa]"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-[11px] uppercase tracking-[0.34em] text-[#9f8d73]">
                 Photo
               </label>
 
               {previewImage ? (
-                <div className="overflow-hidden rounded-[24px] border border-neutral-200/70 bg-neutral-50">
-                  <div className="aspect-[4/3] w-full overflow-hidden">
+                <div className="overflow-hidden rounded-[28px] border border-[#ddd4c4] bg-[#fbf9f3]">
+                  <div className="aspect-[1.35/1] w-full overflow-hidden">
                     <img
                       src={previewImage}
                       alt="Preview"
@@ -517,9 +573,9 @@ export default function App() {
                     />
                   </div>
 
-                  <div className="flex items-center justify-between gap-3 border-t border-neutral-200/70 p-3">
-                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-neutral-200/70 bg-white px-3 py-2 text-sm text-neutral-600 transition hover:bg-neutral-50">
-                      <ImageIcon size={16} />
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e8e0d4] p-4">
+                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#ddd4c4] bg-[#f8f5ee] px-4 py-2.5 text-[12px] uppercase tracking-[0.24em] text-[#9e8d73] transition hover:bg-[#f4efe5]">
+                      <ImageIcon size={14} strokeWidth={1.8} />
                       Change photo
                       <input
                         type="file"
@@ -532,17 +588,17 @@ export default function App() {
                     <button
                       type="button"
                       onClick={handleRemovePhoto}
-                      className="inline-flex items-center gap-2 rounded-full border border-neutral-200/70 bg-white px-3 py-2 text-sm text-neutral-600 transition hover:bg-neutral-50"
+                      className="inline-flex items-center gap-2 rounded-full border border-[#ddd4c4] bg-[#f8f5ee] px-4 py-2.5 text-[12px] uppercase tracking-[0.24em] text-[#9e8d73] transition hover:bg-[#f4efe5]"
                     >
-                      <X size={16} />
+                      <X size={14} strokeWidth={1.8} />
                       Remove
                     </button>
                   </div>
                 </div>
               ) : (
-                <label className="flex cursor-pointer items-center justify-center gap-2 rounded-[24px] border border-dashed border-neutral-300/70 bg-white px-4 py-10 text-sm text-neutral-600 transition hover:bg-neutral-50">
-                  <Camera size={18} />
-                  Choose image
+                <label className="flex cursor-pointer items-center justify-center gap-3 rounded-[28px] border border-dashed border-[#d8cfbf] bg-[#fbf9f3] px-6 py-14 text-[15px] text-[#8d7d64] transition hover:bg-[#f6f1e8]">
+                  <Camera size={18} strokeWidth={1.8} />
+                  Add photo
                   <input
                     type="file"
                     accept="image/*"
@@ -557,12 +613,12 @@ export default function App() {
               <button
                 type="submit"
                 disabled={saving}
-                className="inline-flex items-center gap-2 rounded-full bg-neutral-800 px-5 py-3 text-sm font-medium text-white/90 transition hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-full border border-[#cfc2aa] bg-[#eee5d2] px-6 py-3 text-[12px] uppercase tracking-[0.28em] text-[#8c7b5f] transition hover:bg-[#e7dcc4] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {saving ? (
                   <>
-                    <LoaderCircle size={16} className="animate-spin" />
-                    Saving...
+                    <LoaderCircle size={15} className="animate-spin" />
+                    Saving
                   </>
                 ) : editingId ? (
                   "Update Entry"
@@ -575,7 +631,7 @@ export default function App() {
                 type="button"
                 onClick={clearEditor}
                 disabled={saving}
-                className="inline-flex items-center gap-2 rounded-full border border-neutral-200/70 bg-white px-5 py-3 text-sm font-medium text-neutral-600 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-full border border-[#ddd4c4] bg-[#f8f5ee] px-6 py-3 text-[12px] uppercase tracking-[0.28em] text-[#a08f74] transition hover:bg-[#f4efe5] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Clear
               </button>
@@ -583,75 +639,41 @@ export default function App() {
           </form>
         </section>
 
-        <section className="mb-5 rounded-[28px] border border-neutral-200/60 bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.03)] sm:p-5">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setActiveView("today")}
-                className={classNames(
-                  "rounded-full px-4 py-2 text-sm transition",
-                  activeView === "today"
-                    ? "bg-neutral-800 text-white/90 hover:bg-neutral-700"
-                    : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
-                )}
-              >
-                Today
-              </button>
+        <div className="mb-4 text-[12px] uppercase tracking-[0.32em] text-[#85765f]">
+          {formatHeaderDate(targetDate)}
+        </div>
 
-              <button
-                type="button"
-                onClick={() => setActiveView("history")}
-                className={classNames(
-                  "inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm transition",
-                  activeView === "history"
-                    ? "bg-neutral-800 text-white/90 hover:bg-neutral-700"
-                    : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
-                )}
-              >
-                <History size={14} />
-                History
-              </button>
-            </div>
-
-            {activeView === "history" ? (
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="rounded-full border border-neutral-200/70 bg-white px-4 py-2 text-sm text-neutral-900 outline-none transition focus:border-neutral-400"
-              />
-            ) : (
-              <div className="rounded-full bg-neutral-100 px-4 py-2 text-sm text-neutral-500">
-                {formatEntryDate(todayString())}
-              </div>
-            )}
-          </div>
-
-          {loadingEntries ? (
-            <div className="flex items-center gap-2 rounded-2xl bg-neutral-50 px-4 py-6 text-sm text-neutral-500">
-              <LoaderCircle size={16} className="animate-spin" />
+        {loadingEntries ? (
+          <div className="rounded-[28px] border border-[#ddd4c4] bg-[#f8f5ee] px-6 py-8 text-[15px] text-[#8f816b]">
+            <div className="flex items-center gap-3">
+              <LoaderCircle size={18} className="animate-spin" />
               Syncing Daily Frame...
             </div>
-          ) : displayedEntries.length === 0 ? (
-            <div className="rounded-2xl bg-neutral-50 px-4 py-8 text-center text-sm text-neutral-500">
-              {activeView === "history"
-                ? "No entries for this date."
-                : "No entries yet for today."}
-            </div>
-          ) : (
-            <div className="grid gap-4 md:grid-cols-2">
-              {displayedEntries.map((entry) => (
-                <EntryCard
-                  key={entry.id}
-                  entry={entry}
-                  onEdit={startEdit}
-                  onDelete={handleDelete}
-                />
-              ))}
-            </div>
-          )}
-        </section>
+          </div>
+        ) : displayedEntries.length === 0 ? (
+          <div className="rounded-[28px] border border-[#ddd4c4] bg-[#f8f5ee] px-6 py-10 text-center text-[15px] text-[#9c8d75]">
+            {activeView === "history"
+              ? "No entries for this date."
+              : "No entries yet for today."}
+          </div>
+        ) : (
+          <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+            {displayedEntries.map((entry) => (
+              <EntryCard
+                key={entry.id}
+                entry={entry}
+                onEdit={startEdit}
+                onDelete={handleDelete}
+              />
+            ))}
+          </section>
+        )}
+
+        {syncError ? (
+          <div className="mt-5 rounded-[24px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {syncError}
+          </div>
+        ) : null}
       </div>
     </div>
   );

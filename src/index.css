@@ -1,19 +1,24 @@
 @import "tailwindcss";
 
-/* --- Base reset to match your previous look --- */
-@layer base {
-  body {
-    @apply bg-neutral-100 text-neutral-900 antialiased;
-  }
+html,
+body,
+#root {
+  min-height: 100%;
 }
 
-/* --- Leica background --- */
+body {
+  margin: 0;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
 .bg-leica {
-  background-color: #f3f2ef;
+  background-color: #f4f0e8;
   background-image: radial-gradient(
     circle,
-    rgba(0, 0, 0, 0.06) 1px,
+    rgba(156, 141, 117, 0.18) 1px,
     transparent 1px
   );
-  background-size: 18px 18px;
+  background-size: 22px 22px;
 }
