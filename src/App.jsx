@@ -19,10 +19,10 @@ import {
 import {
   addEntry,
   deleteEntry,
-  deletePhotoByPath,
+  deletePhotosByPaths,
   subscribeToEntries,
   updateEntry,
-  uploadEntryPhoto,
+  uploadEntryPhotos,
 } from "./storage";
 
 const TYPES = [
@@ -31,6 +31,8 @@ const TYPES = [
   { name: "Cafe", icon: Coffee },
   { name: "Notes", icon: BookOpen },
 ];
+
+const MAX_IMAGES = 4;
 
 const todayString = () => new Date().toISOString().slice(0, 10);
 
@@ -48,9 +50,8 @@ const emptyEditor = () => ({
   date: todayString(),
   time: currentTimeString(),
   place: "",
-  photoFile: null,
-  photoPreview: "",
-  removePhoto: false,
+  existingPhotos: [],
+  newPhotos: [],
 });
 
 function classNames(...items) {
@@ -92,24 +93,70 @@ function formatTimeLabel(time) {
   });
 }
 
+function PhotoMosaic({ photos, alt }) {
+  if (!photos || photos.length === 0) {
+    return (
+      <div className="aspect-[1.18/1] w-full bg-[#ece7dc]" />
+    );
+  }
+
+  if (photos.length === 1) {
+    return (
+      <div className="aspect-[1.18/1] w-full overflow-hidden bg-[#ece7dc]">
+        <img
+          src={photos[0].url}
+          alt={alt}
+          className="h-full w-full object-cover"
+          loading="lazy"
+        />
+      </div>
+    );
+  }
+
+  if (photos.length === 2) {
+    return (
+      <div className="grid aspect-[1.18/1] w-full grid-cols-2 gap-[2px] overflow-hidden bg-[#ece7dc]">
+        {photos.slice(0, 2).map((photo, index) => (
+          <img
+            key={photo.url + index}
+            src={photo.url}
+            alt={alt}
+            className="h-full w-full object-cover"
+            loading="lazy"
+          />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid aspect-[1.18/1] w-full grid-cols-2 grid-rows-2 gap-[2px] overflow-hidden bg-[#ece7dc]">
+      {photos.slice(0, 4).map((photo, index) => (
+        <div key={photo.url + index} className="relative h-full w-full">
+          <img
+            src={photo.url}
+            alt={alt}
+            className="h-full w-full object-cover"
+            loading="lazy"
+          />
+          {index === 3 && photos.length > 4 ? (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/35 text-lg font-medium text-white">
+              +{photos.length - 4}
+            </div>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function EntryCard({ entry, onEdit, onDelete }) {
   const Icon =
     TYPES.find((item) => item.name === entry.type)?.icon || BookOpen;
 
   return (
     <article className="overflow-hidden rounded-[28px] border border-[#ded7ca] bg-[#f8f5ee] shadow-[0_1px_2px_rgba(80,66,38,0.04)]">
-      {entry.photoURL ? (
-        <div className="aspect-[1.18/1] w-full overflow-hidden rounded-b-none rounded-t-[28px] bg-[#ece7dc]">
-          <img
-            src={entry.photoURL}
-            alt={entry.title || entry.type}
-            className="h-full w-full object-cover"
-            loading="lazy"
-          />
-        </div>
-      ) : (
-        <div className="aspect-[1.18/1] w-full rounded-b-none rounded-t-[28px] bg-[#ece7dc]" />
-      )}
+      <PhotoMosaic photos={entry.photos} alt={entry.title || entry.type} />
 
       <div className="px-6 pb-4 pt-5">
         <div className="mb-4 flex items-start justify-between gap-4">
@@ -180,19 +227,128 @@ function EntryCard({ entry, onEdit, onDelete }) {
   );
 }
 
+function HistoryTile({ entry, onOpen }) {
+  const hasPhotos = entry.photos && entry.photos.length > 0;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(entry)}
+      className="group relative overflow-hidden rounded-[22px] bg-[#ece7dc] text-left"
+    >
+      {hasPhotos ? (
+        <>
+          <div className="aspect-square w-full overflow-hidden">
+            <img
+              src={entry.photos[0].url}
+              alt={entry.title || entry.type}
+              className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]"
+              loading="lazy"
+            />
+          </div>
+
+          {entry.photos.length > 1 ? (
+            <div className="absolute right-2 top-2 rounded-full bg-[#f8f5ee]/90 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-[#8c7b5f]">
+              +{entry.photos.length - 1}
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <div className="flex aspect-square w-full flex-col justify-between p-4 text-[#7d705c]">
+          <div className="text-[10px] uppercase tracking-[0.24em] text-[#b3a688]">
+            {entry.type}
+          </div>
+          <div>
+            <div className="mb-2 text-base leading-6">
+              {entry.title || "Untitled entry"}
+            </div>
+            <div className="line-clamp-4 text-sm leading-6 text-[#8f816b]">
+              {entry.note || entry.place || ""}
+            </div>
+          </div>
+        </div>
+      )}
+    </button>
+  );
+}
+
+function EntryModal({ entry, onClose, onEdit, onDelete }) {
+  if (!entry) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4 py-6">
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-[28px] border border-[#ddd4c4] bg-[#f8f5ee] shadow-xl">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#e8e0d4] bg-[#f8f5ee]/95 px-5 py-4 backdrop-blur">
+          <div className="text-[11px] uppercase tracking-[0.28em] text-[#a69473]">
+            {entry.type} · {entry.date ? formatHeaderDate(entry.date) : "No date"}
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full border border-[#ddd4c4] bg-[#f8f5ee] p-2 text-[#9e8d73] transition hover:bg-[#f4efe5]"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="p-5 sm:p-6">
+          <div className="overflow-hidden rounded-[24px]">
+            <PhotoMosaic photos={entry.photos} alt={entry.title || entry.type} />
+          </div>
+
+          <div className="mt-5 mb-3 flex items-start justify-between gap-4">
+            <div>
+              <h3 className="mb-3 text-[1.35rem] font-normal leading-8 text-[#5f5444]">
+                {entry.title || "Untitled entry"}
+              </h3>
+
+              <div className="flex flex-wrap gap-x-4 gap-y-2 text-[11px] uppercase tracking-[0.22em] text-[#b3a688]">
+                {entry.date ? <span>{formatHeaderDate(entry.date)}</span> : null}
+                {entry.time ? <span>{formatTimeLabel(entry.time)}</span> : null}
+                {entry.place ? <span>{entry.place}</span> : null}
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => onEdit(entry)}
+                className="rounded-full border border-[#ddd4c4] bg-[#f8f5ee] px-4 py-2 text-[11px] uppercase tracking-[0.24em] text-[#9e8d73] transition hover:bg-[#f4efe5]"
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                onClick={() => onDelete(entry)}
+                className="rounded-full border border-[#ddd4c4] bg-[#f8f5ee] px-4 py-2 text-[11px] uppercase tracking-[0.24em] text-[#9e8d73] transition hover:bg-[#f4efe5]"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+
+          <div className="whitespace-pre-wrap text-[1rem] leading-8 text-[#8f816b]">
+            {entry.note || "No note for this entry yet."}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [entries, setEntries] = useState([]);
   const [loadingEntries, setLoadingEntries] = useState(true);
   const [syncError, setSyncError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedHistoryEntry, setSelectedHistoryEntry] = useState(null);
 
   const [editor, setEditor] = useState(emptyEditor());
   const [activeView, setActiveView] = useState("today");
-  const [selectedDate, setSelectedDate] = useState(todayString());
 
   const [editingId, setEditingId] = useState(null);
-  const [existingPhotoURL, setExistingPhotoURL] = useState("");
-  const [existingPhotoPath, setExistingPhotoPath] = useState("");
+  const [originalPhotos, setOriginalPhotos] = useState([]);
 
   const [saving, setSaving] = useState(false);
 
@@ -215,31 +371,68 @@ export default function App() {
 
   useEffect(() => {
     return () => {
-      if (editor.photoPreview && editor.photoPreview.startsWith("blob:")) {
-        URL.revokeObjectURL(editor.photoPreview);
-      }
-    };
-  }, [editor.photoPreview]);
-
-  const targetDate = activeView === "today" ? todayString() : selectedDate;
-
-  const displayedEntries = useMemo(() => {
-    return entries
-      .filter((entry) => {
-        if (!entry.date) return false;
-        return entry.date.slice(0, 10) === targetDate;
-      })
-      .filter((entry) => {
-        if (!searchQuery.trim()) return true;
-        const q = searchQuery.toLowerCase();
-        return (
-          (entry.title || "").toLowerCase().includes(q) ||
-          (entry.note || "").toLowerCase().includes(q) ||
-          (entry.place || "").toLowerCase().includes(q) ||
-          (entry.type || "").toLowerCase().includes(q)
-        );
+      editor.newPhotos.forEach((photo) => {
+        if (photo.preview?.startsWith("blob:")) {
+          URL.revokeObjectURL(photo.preview);
+        }
       });
-  }, [entries, targetDate, searchQuery]);
+    };
+  }, [editor.newPhotos]);
+
+  const normalizedEntries = useMemo(() => {
+    return [...entries].sort((a, b) => {
+      const aDate = a.date || "";
+      const bDate = b.date || "";
+      if (aDate !== bDate) return bDate.localeCompare(aDate);
+
+      const aTime = a.time || "";
+      const bTime = b.time || "";
+      if (aTime !== bTime) return bTime.localeCompare(aTime);
+
+      return (b.createdAtMs || 0) - (a.createdAtMs || 0);
+    });
+  }, [entries]);
+
+  const filteredEntries = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+
+    return normalizedEntries.filter((entry) => {
+      if (activeView === "today") {
+        if (!entry.date || entry.date.slice(0, 10) !== todayString()) {
+          return false;
+        }
+      }
+
+      if (!q) return true;
+
+      return (
+        (entry.title || "").toLowerCase().includes(q) ||
+        (entry.note || "").toLowerCase().includes(q) ||
+        (entry.place || "").toLowerCase().includes(q) ||
+        (entry.type || "").toLowerCase().includes(q)
+      );
+    });
+  }, [normalizedEntries, activeView, searchQuery]);
+
+  const groupedHistory = useMemo(() => {
+    const groups = [];
+
+    for (const entry of filteredEntries) {
+      const dateKey = entry.date || "Unknown date";
+      const lastGroup = groups[groups.length - 1];
+
+      if (!lastGroup || lastGroup.date !== dateKey) {
+        groups.push({
+          date: dateKey,
+          entries: [entry],
+        });
+      } else {
+        lastGroup.entries.push(entry);
+      }
+    }
+
+    return groups;
+  }, [filteredEntries]);
 
   const totalToday = useMemo(() => {
     return entries.filter(
@@ -255,55 +448,69 @@ export default function App() {
   };
 
   const clearEditor = () => {
-    if (editor.photoPreview && editor.photoPreview.startsWith("blob:")) {
-      URL.revokeObjectURL(editor.photoPreview);
-    }
+    editor.newPhotos.forEach((photo) => {
+      if (photo.preview?.startsWith("blob:")) {
+        URL.revokeObjectURL(photo.preview);
+      }
+    });
 
     setEditor(emptyEditor());
     setEditingId(null);
-    setExistingPhotoURL("");
-    setExistingPhotoPath("");
+    setOriginalPhotos([]);
   };
 
   const handlePhotoChange = (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
 
-    if (editor.photoPreview && editor.photoPreview.startsWith("blob:")) {
-      URL.revokeObjectURL(editor.photoPreview);
-    }
+    const usedSlots = editor.existingPhotos.length + editor.newPhotos.length;
+    const availableSlots = Math.max(0, MAX_IMAGES - usedSlots);
+    const acceptedFiles = files.slice(0, availableSlots);
 
-    const preview = URL.createObjectURL(file);
+    const nextNewPhotos = acceptedFiles.map((file) => ({
+      file,
+      preview: URL.createObjectURL(file),
+    }));
 
     setEditor((prev) => ({
       ...prev,
-      photoFile: file,
-      photoPreview: preview,
-      removePhoto: false,
+      newPhotos: [...prev.newPhotos, ...nextNewPhotos],
+    }));
+
+    event.target.value = "";
+  };
+
+  const removeExistingPhoto = (indexToRemove) => {
+    setEditor((prev) => ({
+      ...prev,
+      existingPhotos: prev.existingPhotos.filter((_, index) => index !== indexToRemove),
     }));
   };
 
-  const handleRemovePhoto = () => {
-    if (editor.photoPreview && editor.photoPreview.startsWith("blob:")) {
-      URL.revokeObjectURL(editor.photoPreview);
-    }
+  const removeNewPhoto = (indexToRemove) => {
+    setEditor((prev) => {
+      const target = prev.newPhotos[indexToRemove];
+      if (target?.preview?.startsWith("blob:")) {
+        URL.revokeObjectURL(target.preview);
+      }
 
-    setEditor((prev) => ({
-      ...prev,
-      photoFile: null,
-      photoPreview: "",
-      removePhoto: true,
-    }));
+      return {
+        ...prev,
+        newPhotos: prev.newPhotos.filter((_, index) => index !== indexToRemove),
+      };
+    });
   };
 
   const startEdit = (entry) => {
-    if (editor.photoPreview && editor.photoPreview.startsWith("blob:")) {
-      URL.revokeObjectURL(editor.photoPreview);
-    }
+    editor.newPhotos.forEach((photo) => {
+      if (photo.preview?.startsWith("blob:")) {
+        URL.revokeObjectURL(photo.preview);
+      }
+    });
 
+    setSelectedHistoryEntry(null);
     setEditingId(entry.id);
-    setExistingPhotoURL(entry.photoURL || "");
-    setExistingPhotoPath(entry.photoPath || "");
+    setOriginalPhotos(entry.photos || []);
 
     setEditor({
       type: entry.type || "Ride",
@@ -312,11 +519,11 @@ export default function App() {
       date: entry.date || todayString(),
       time: entry.time || currentTimeString(),
       place: entry.place || "",
-      photoFile: null,
-      photoPreview: entry.photoURL || "",
-      removePhoto: false,
+      existingPhotos: entry.photos || [],
+      newPhotos: [],
     });
 
+    setActiveView("today");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -326,12 +533,18 @@ export default function App() {
 
     try {
       await deleteEntry(entry.id);
-      if (entry.photoPath) {
-        await deletePhotoByPath(entry.photoPath);
+
+      const allPaths = (entry.photos || []).map((photo) => photo.path).filter(Boolean);
+      if (allPaths.length) {
+        await deletePhotosByPaths(allPaths);
       }
 
       if (editingId === entry.id) {
         clearEditor();
+      }
+
+      if (selectedHistoryEntry?.id === entry.id) {
+        setSelectedHistoryEntry(null);
       }
     } catch (error) {
       console.error("Delete entry failed:", error);
@@ -354,41 +567,38 @@ export default function App() {
     setSaving(true);
 
     try {
-      let nextPhotoURL = existingPhotoURL;
-      let nextPhotoPath = existingPhotoPath;
+      const uploadedPhotos = editor.newPhotos.length
+        ? await uploadEntryPhotos(editor.newPhotos.map((photo) => photo.file))
+        : [];
 
-      if (editor.photoFile) {
-        const uploadResult = await uploadEntryPhoto(editor.photoFile);
-
-        nextPhotoURL = uploadResult.photoURL;
-        nextPhotoPath = uploadResult.photoPath;
-
-        if (existingPhotoPath) {
-          await deletePhotoByPath(existingPhotoPath);
-        }
-      } else if (editor.removePhoto) {
-        if (existingPhotoPath) {
-          await deletePhotoByPath(existingPhotoPath);
-        }
-        nextPhotoURL = "";
-        nextPhotoPath = "";
-      }
-
-      const normalizedType = editor.type === "Journal" ? "Notes" : editor.type;
+      const finalPhotos = [...editor.existingPhotos, ...uploadedPhotos].slice(0, MAX_IMAGES);
 
       const payload = {
-        type: normalizedType,
+        type: editor.type,
         title: cleanTitle,
         note: cleanNote,
         date: editor.date,
         time: editor.time,
         place: cleanPlace,
-        photoURL: nextPhotoURL,
-        photoPath: nextPhotoPath,
+        photos: finalPhotos,
       };
 
       if (editingId) {
+        const removedPaths = originalPhotos
+          .filter(
+            (originalPhoto) =>
+              !editor.existingPhotos.some(
+                (existingPhoto) => existingPhoto.path === originalPhoto.path
+              )
+          )
+          .map((photo) => photo.path)
+          .filter(Boolean);
+
         await updateEntry(editingId, payload);
+
+        if (removedPaths.length) {
+          await deletePhotosByPaths(removedPaths);
+        }
       } else {
         await addEntry(payload);
       }
@@ -402,7 +612,7 @@ export default function App() {
     }
   };
 
-  const previewImage = editor.photoPreview || existingPhotoURL;
+  const editorPreviewCount = editor.existingPhotos.length + editor.newPhotos.length;
 
   return (
     <div className="min-h-screen bg-leica text-[#4e4435]">
@@ -410,7 +620,7 @@ export default function App() {
         <header className="mb-6 rounded-[30px] border border-[#ddd4c4] bg-[#f8f5ee] px-7 py-7 shadow-[0_1px_2px_rgba(80,66,38,0.04)]">
           <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
             <div>
-              <h1 className="mb-1 text-[2.05rem] font-medium leading-tight text-[#8f816b]">
+              <h1 className="text-[2.05rem] font-medium text-[#8f816b]">
                 Daily Frame.
               </h1>
               <div className="mb-5 text-[11px] uppercase tracking-[0.36em] text-[#a69473]">
@@ -474,7 +684,7 @@ export default function App() {
 
             <div className="flex flex-col gap-3 sm:flex-row">
               <div className="rounded-full border border-[#ddd4c4] bg-[#f8f5ee] px-6 py-3 text-[12px] uppercase tracking-[0.28em] text-[#a59376]">
-                {formatHeaderDate(targetDate)}
+                {activeView === "today" ? formatHeaderDate(todayString()) : "All dates"}
               </div>
 
               <label className="flex min-w-[250px] items-center gap-3 rounded-full border border-[#ddd4c4] bg-[#f8f5ee] px-5 py-3 text-[#a59376]">
@@ -560,53 +770,72 @@ export default function App() {
 
             <div>
               <label className="mb-2 block text-[11px] uppercase tracking-[0.34em] text-[#9f8d73]">
-                Photo
+                Photos ({editorPreviewCount}/{MAX_IMAGES})
               </label>
 
-              {previewImage ? (
-                <div className="overflow-hidden rounded-[28px] border border-[#ddd4c4] bg-[#fbf9f3]">
-                  <div className="aspect-[1.35/1] w-full overflow-hidden">
-                    <img
-                      src={previewImage}
-                      alt="Preview"
-                      className="h-full w-full object-cover"
+              <div className="space-y-4">
+                {(editor.existingPhotos.length > 0 || editor.newPhotos.length > 0) ? (
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    {editor.existingPhotos.map((photo, index) => (
+                      <div
+                        key={`existing-${photo.url}-${index}`}
+                        className="relative overflow-hidden rounded-[20px] border border-[#ddd4c4] bg-[#fbf9f3]"
+                      >
+                        <div className="aspect-square overflow-hidden">
+                          <img
+                            src={photo.url}
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeExistingPhoto(index)}
+                          className="absolute right-2 top-2 rounded-full bg-[#f8f5ee]/95 p-1.5 text-[#8f816b] shadow-sm"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+
+                    {editor.newPhotos.map((photo, index) => (
+                      <div
+                        key={`new-${photo.preview}-${index}`}
+                        className="relative overflow-hidden rounded-[20px] border border-[#ddd4c4] bg-[#fbf9f3]"
+                      >
+                        <div className="aspect-square overflow-hidden">
+                          <img
+                            src={photo.preview}
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeNewPhoto(index)}
+                          className="absolute right-2 top-2 rounded-full bg-[#f8f5ee]/95 p-1.5 text-[#8f816b] shadow-sm"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                {editorPreviewCount < MAX_IMAGES ? (
+                  <label className="flex cursor-pointer items-center justify-center gap-3 rounded-[28px] border border-dashed border-[#d8cfbf] bg-[#fbf9f3] px-6 py-10 text-[15px] text-[#8d7d64] transition hover:bg-[#f6f1e8]">
+                    <Camera size={18} strokeWidth={1.8} />
+                    Add photos
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handlePhotoChange}
+                      className="hidden"
                     />
-                  </div>
-
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e8e0d4] p-4">
-                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#ddd4c4] bg-[#f8f5ee] px-4 py-2.5 text-[12px] uppercase tracking-[0.24em] text-[#9e8d73] transition hover:bg-[#f4efe5]">
-                      <ImageIcon size={14} strokeWidth={1.8} />
-                      Change photo
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handlePhotoChange}
-                        className="hidden"
-                      />
-                    </label>
-
-                    <button
-                      type="button"
-                      onClick={handleRemovePhoto}
-                      className="inline-flex items-center gap-2 rounded-full border border-[#ddd4c4] bg-[#f8f5ee] px-4 py-2.5 text-[12px] uppercase tracking-[0.24em] text-[#9e8d73] transition hover:bg-[#f4efe5]"
-                    >
-                      <X size={14} strokeWidth={1.8} />
-                      Remove
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <label className="flex cursor-pointer items-center justify-center gap-3 rounded-[28px] border border-dashed border-[#d8cfbf] bg-[#fbf9f3] px-6 py-14 text-[15px] text-[#8d7d64] transition hover:bg-[#f6f1e8]">
-                  <Camera size={18} strokeWidth={1.8} />
-                  Add photo
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handlePhotoChange}
-                    className="hidden"
-                  />
-                </label>
-              )}
+                  </label>
+                ) : null}
+              </div>
             </div>
 
             <div className="flex flex-wrap gap-3 pt-1">
@@ -639,10 +868,6 @@ export default function App() {
           </form>
         </section>
 
-        <div className="mb-4 text-[12px] uppercase tracking-[0.32em] text-[#85765f]">
-          {formatHeaderDate(targetDate)}
-        </div>
-
         {loadingEntries ? (
           <div className="rounded-[28px] border border-[#ddd4c4] bg-[#f8f5ee] px-6 py-8 text-[15px] text-[#8f816b]">
             <div className="flex items-center gap-3">
@@ -650,23 +875,51 @@ export default function App() {
               Syncing Daily Frame...
             </div>
           </div>
-        ) : displayedEntries.length === 0 ? (
+        ) : filteredEntries.length === 0 ? (
           <div className="rounded-[28px] border border-[#ddd4c4] bg-[#f8f5ee] px-6 py-10 text-center text-[15px] text-[#9c8d75]">
             {activeView === "history"
-              ? "No entries for this date."
+              ? "No history entries yet."
               : "No entries yet for today."}
           </div>
+        ) : activeView === "today" ? (
+          <>
+            <div className="mb-4 text-[12px] uppercase tracking-[0.32em] text-[#85765f]">
+              {formatHeaderDate(todayString())}
+            </div>
+
+            <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+              {filteredEntries.map((entry) => (
+                <EntryCard
+                  key={entry.id}
+                  entry={entry}
+                  onEdit={startEdit}
+                  onDelete={handleDelete}
+                />
+              ))}
+            </section>
+          </>
         ) : (
-          <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-            {displayedEntries.map((entry) => (
-              <EntryCard
-                key={entry.id}
-                entry={entry}
-                onEdit={startEdit}
-                onDelete={handleDelete}
-              />
+          <div className="space-y-8">
+            {groupedHistory.map((group) => (
+              <section key={group.date}>
+                <div className="mb-4 text-[12px] uppercase tracking-[0.32em] text-[#85765f]">
+                  {group.date === "Unknown date"
+                    ? "Unknown date"
+                    : formatHeaderDate(group.date)}
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                  {group.entries.map((entry) => (
+                    <HistoryTile
+                      key={entry.id}
+                      entry={entry}
+                      onOpen={setSelectedHistoryEntry}
+                    />
+                  ))}
+                </div>
+              </section>
             ))}
-          </section>
+          </div>
         )}
 
         {syncError ? (
@@ -675,6 +928,13 @@ export default function App() {
           </div>
         ) : null}
       </div>
+
+      <EntryModal
+        entry={selectedHistoryEntry}
+        onClose={() => setSelectedHistoryEntry(null)}
+        onEdit={startEdit}
+        onDelete={handleDelete}
+      />
     </div>
   );
 }
