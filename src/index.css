@@ -1,6 +1,5 @@
 @import "tailwindcss";
 
-/* Reset + base */
 html,
 body,
 #root {
@@ -14,15 +13,12 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Leica + Rapha paper background */
 .bg-leica {
-  background-color: #f3f2ef;
-
+  background-color: red;
   background-image: radial-gradient(
     circle,
-    rgba(0, 0, 0, 0.035) 1px,
+    rgba(0, 0, 0, 0.08) 1px,
     transparent 1px
   );
-
-  background-size: 20px 20px;
+  background-size: 16px 16px;
 }
