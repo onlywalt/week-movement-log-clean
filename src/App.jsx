@@ -267,7 +267,57 @@ export default function App() {
     setImageBusy(true);
 
     try {
-      const { url, path } = await uploadEntryPhoto(file);
+      const img = new Image();
+      const reader = new FileReader();
+
+      const dataUrl = await new Promise((resolve, reject) => {
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      img.src = dataUrl;
+
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+      });
+
+      const maxWidth = 1600;
+      const maxHeight = 1600;
+
+      let { width, height } = img;
+
+      if (width > maxWidth || height > maxHeight) {
+        const ratio = Math.min(maxWidth / width, maxHeight / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        throw new Error("Canvas not supported");
+      }
+
+      ctx.drawImage(img, 0, 0, width, height);
+
+      const blob = await new Promise((resolve) =>
+        canvas.toBlob(resolve, "image/jpeg", 0.82)
+      );
+
+      if (!blob) {
+        throw new Error("Failed to create compressed image");
+      }
+
+      const safeFile = new File([blob], `${Date.now()}.jpg`, {
+        type: "image/jpeg",
+      });
+
+      const { url, path } = await uploadEntryPhoto(safeFile);
 
       setForm((prev) => ({
         ...prev,
@@ -276,7 +326,7 @@ export default function App() {
       }));
     } catch (error) {
       console.error("Failed to upload image:", error);
-      alert("This image could not be uploaded.");
+      alert("This phone photo could not be uploaded. Try again.");
     } finally {
       setImageBusy(false);
     }
@@ -337,6 +387,9 @@ export default function App() {
         const id = await addEntry(payload);
         setEntries((prev) => [{ id, ...payload }, ...prev]);
       }
+
+      const refreshed = await fetchEntries();
+      setEntries(refreshed);
 
       setForm(makeEmptyForm(form.type, form.date));
       setEditorOpen(false);
