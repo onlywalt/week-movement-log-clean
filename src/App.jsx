@@ -410,7 +410,7 @@ export default function App() {
         <header className="mb-6 rounded-[30px] border border-[#ddd4c4] bg-[#f8f5ee] px-7 py-7 shadow-[0_1px_2px_rgba(80,66,38,0.04)]">
           <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
             <div>
-              <h1 className="mb-1 text-[2.05rem] font-medium leading-tight text-[#3f372d]">
+              <h1 className="mb-1 text-[2.05rem] font-medium leading-tight text-[#8f816b]">
                 Daily Frame.
               </h1>
               <div className="mb-5 text-[11px] uppercase tracking-[0.36em] text-[#a69473]">
