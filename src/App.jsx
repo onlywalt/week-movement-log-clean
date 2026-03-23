@@ -361,6 +361,8 @@ export default function App() {
   async function handleSubmit(e) {
     e.preventDefault();
 
+    if (imageBusy) return;
+
     const cleanTitle = form.title.trim();
     const cleanPlace = form.place.trim();
     const cleanNote = form.note.trim();
@@ -695,7 +697,11 @@ export default function App() {
                     disabled={imageBusy}
                     className="flex-1 rounded-full border border-[#b8aa94] bg-[#ece4d6] px-5 py-3 text-[11px] uppercase tracking-[0.28em] text-[#241e18] transition hover:bg-[#e6dccb] disabled:opacity-60"
                   >
-                    {form.id ? "Save entry" : "Add entry"}
+                    {imageBusy
+                      ? "Uploading..."
+                      : form.id
+                      ? "Save entry"
+                      : "Add entry"}
                   </button>
 
                   <button

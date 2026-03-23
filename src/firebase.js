@@ -3,18 +3,16 @@ import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCRdRt_hEeo_JdThLy13Plw8KVbvphVr1Y",
-  authDomain: "daily-frame-web.firebaseapp.com",
-  projectId: "daily-frame-web",
-  storageBucket: "daily-frame-web.firebasestorage.app",
-  messagingSenderId: "443474485868",
-  appId: "1:443474485868:web:878134a3f008969f29ee49",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Export services
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 
