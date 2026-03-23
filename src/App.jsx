@@ -79,6 +79,15 @@ function formatCardDate(dateString) {
   });
 }
 
+function formatMonthYear(dateString) {
+  if (!dateString) return "";
+  const d = new Date(`${dateString}T00:00:00`);
+  return d.toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
+  });
+}
+
 function formatTimeLabel(time) {
   if (!time) return "";
   const [h, m] = time.split(":");
@@ -95,9 +104,7 @@ function formatTimeLabel(time) {
 
 function PhotoMosaic({ photos, alt }) {
   if (!photos || photos.length === 0) {
-    return (
-      <div className="aspect-[1.18/1] w-full bg-[#ece7dc]" />
-    );
+    return <div className="aspect-[1.18/1] w-full bg-[#ece7dc]" />;
   }
 
   if (photos.length === 1) {
@@ -297,7 +304,7 @@ function EntryModal({ entry, onClose, onEdit, onDelete }) {
             <PhotoMosaic photos={entry.photos} alt={entry.title || entry.type} />
           </div>
 
-          <div className="mt-5 mb-3 flex items-start justify-between gap-4">
+          <div className="mb-3 mt-5 flex items-start justify-between gap-4">
             <div>
               <h3 className="mb-3 text-[1.35rem] font-normal leading-8 text-[#5f5444]">
                 {entry.title || "Untitled entry"}
@@ -415,23 +422,41 @@ export default function App() {
   }, [normalizedEntries, activeView, searchQuery]);
 
   const groupedHistory = useMemo(() => {
-    const groups = [];
+    const monthGroups = [];
 
     for (const entry of filteredEntries) {
       const dateKey = entry.date || "Unknown date";
-      const lastGroup = groups[groups.length - 1];
+      const monthKey =
+        dateKey === "Unknown date" ? "Unknown month" : dateKey.slice(0, 7);
 
-      if (!lastGroup || lastGroup.date !== dateKey) {
-        groups.push({
-          date: dateKey,
-          entries: [entry],
-        });
-      } else {
-        lastGroup.entries.push(entry);
+      let monthGroup = monthGroups.find((group) => group.monthKey === monthKey);
+
+      if (!monthGroup) {
+        monthGroup = {
+          monthKey,
+          monthLabel:
+            monthKey === "Unknown month"
+              ? "Unknown month"
+              : formatMonthYear(dateKey),
+          days: [],
+        };
+        monthGroups.push(monthGroup);
       }
+
+      let dayGroup = monthGroup.days.find((day) => day.date === dateKey);
+
+      if (!dayGroup) {
+        dayGroup = {
+          date: dateKey,
+          entries: [],
+        };
+        monthGroup.days.push(dayGroup);
+      }
+
+      dayGroup.entries.push(entry);
     }
 
-    return groups;
+    return monthGroups;
   }, [filteredEntries]);
 
   const totalToday = useMemo(() => {
@@ -483,7 +508,9 @@ export default function App() {
   const removeExistingPhoto = (indexToRemove) => {
     setEditor((prev) => ({
       ...prev,
-      existingPhotos: prev.existingPhotos.filter((_, index) => index !== indexToRemove),
+      existingPhotos: prev.existingPhotos.filter(
+        (_, index) => index !== indexToRemove
+      ),
     }));
   };
 
@@ -534,7 +561,9 @@ export default function App() {
     try {
       await deleteEntry(entry.id);
 
-      const allPaths = (entry.photos || []).map((photo) => photo.path).filter(Boolean);
+      const allPaths = (entry.photos || [])
+        .map((photo) => photo.path)
+        .filter(Boolean);
       if (allPaths.length) {
         await deletePhotosByPaths(allPaths);
       }
@@ -571,7 +600,10 @@ export default function App() {
         ? await uploadEntryPhotos(editor.newPhotos.map((photo) => photo.file))
         : [];
 
-      const finalPhotos = [...editor.existingPhotos, ...uploadedPhotos].slice(0, MAX_IMAGES);
+      const finalPhotos = [...editor.existingPhotos, ...uploadedPhotos].slice(
+        0,
+        MAX_IMAGES
+      );
 
       const payload = {
         type: editor.type,
@@ -612,7 +644,8 @@ export default function App() {
     }
   };
 
-  const editorPreviewCount = editor.existingPhotos.length + editor.newPhotos.length;
+  const editorPreviewCount =
+    editor.existingPhotos.length + editor.newPhotos.length;
 
   return (
     <div className="min-h-screen bg-leica text-[#4e4435]">
@@ -684,7 +717,9 @@ export default function App() {
 
             <div className="flex flex-col gap-3 sm:flex-row">
               <div className="rounded-full border border-[#ddd4c4] bg-[#f8f5ee] px-6 py-3 text-[12px] uppercase tracking-[0.28em] text-[#a59376]">
-                {activeView === "today" ? formatHeaderDate(todayString()) : "All dates"}
+                {activeView === "today"
+                  ? formatHeaderDate(todayString())
+                  : "All dates"}
               </div>
 
               <label className="flex min-w-[250px] items-center gap-3 rounded-full border border-[#ddd4c4] bg-[#f8f5ee] px-5 py-3 text-[#a59376]">
@@ -774,7 +809,7 @@ export default function App() {
               </label>
 
               <div className="space-y-4">
-                {(editor.existingPhotos.length > 0 || editor.newPhotos.length > 0) ? (
+                {editor.existingPhotos.length > 0 || editor.newPhotos.length > 0 ? (
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                     {editor.existingPhotos.map((photo, index) => (
                       <div
@@ -899,22 +934,36 @@ export default function App() {
             </section>
           </>
         ) : (
-          <div className="space-y-8">
-            {groupedHistory.map((group) => (
-              <section key={group.date}>
-                <div className="mb-4 text-[12px] uppercase tracking-[0.32em] text-[#85765f]">
-                  {group.date === "Unknown date"
-                    ? "Unknown date"
-                    : formatHeaderDate(group.date)}
+          <div className="space-y-10">
+            {groupedHistory.map((monthGroup) => (
+              <section key={monthGroup.monthKey}>
+                <div className="mb-6 mt-2 flex items-center gap-4">
+                  <div className="h-px flex-1 bg-[#e6dfd4]" />
+                  <div className="text-[12px] uppercase tracking-[0.32em] text-[#8f816b]">
+                    {monthGroup.monthLabel}
+                  </div>
+                  <div className="h-px flex-1 bg-[#e6dfd4]" />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                  {group.entries.map((entry) => (
-                    <HistoryTile
-                      key={entry.id}
-                      entry={entry}
-                      onOpen={setSelectedHistoryEntry}
-                    />
+                <div className="space-y-8">
+                  {monthGroup.days.map((dayGroup) => (
+                    <section key={dayGroup.date}>
+                      <div className="mb-4 text-[12px] uppercase tracking-[0.32em] text-[#85765f]">
+                        {dayGroup.date === "Unknown date"
+                          ? "Unknown date"
+                          : formatHeaderDate(dayGroup.date)}
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                        {dayGroup.entries.map((entry) => (
+                          <HistoryTile
+                            key={entry.id}
+                            entry={entry}
+                            onOpen={setSelectedHistoryEntry}
+                          />
+                        ))}
+                      </div>
+                    </section>
                   ))}
                 </div>
               </section>
