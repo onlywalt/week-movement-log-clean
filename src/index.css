@@ -1,24 +1,19 @@
 @import "tailwindcss";
 
-html,
-body,
-#root {
-  min-height: 100%;
+/* --- Base reset to match your previous look --- */
+@layer base {
+  body {
+    @apply bg-neutral-100 text-neutral-900 antialiased;
+  }
 }
 
-body {
-  margin: 0;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    Roboto, Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-}
-
+/* --- Leica background --- */
 .bg-leica {
-  background-color: red;
+  background-color: #f3f2ef;
   background-image: radial-gradient(
     circle,
-    rgba(0, 0, 0, 0.08) 1px,
+    rgba(0, 0, 0, 0.06) 1px,
     transparent 1px
   );
-  background-size: 16px 16px;
+  background-size: 18px 18px;
 }

@@ -32,6 +32,7 @@ const TYPES = [
 ];
 
 const todayString = () => new Date().toISOString().slice(0, 10);
+
 const currentTimeString = () => {
   const now = new Date();
   const hh = String(now.getHours()).padStart(2, "0");
@@ -85,7 +86,7 @@ function EntryCard({ entry, onEdit, onDelete }) {
     TYPES.find((item) => item.name === entry.type)?.icon || BookOpen;
 
   return (
-    <article className="overflow-hidden rounded-3xl border border-neutral-200 bg-white shadow-sm">
+    <article className="overflow-hidden rounded-3xl border border-neutral-200/70 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
       {entry.photoURL ? (
         <div className="aspect-[4/3] w-full overflow-hidden bg-neutral-100">
           <img
@@ -100,7 +101,7 @@ function EntryCard({ entry, onEdit, onDelete }) {
       <div className="p-4 sm:p-5">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="mb-1 flex items-center gap-2 text-[11px] uppercase tracking-[0.22em] text-neutral-500">
+            <div className="mb-1 flex items-center gap-2 text-[10px] uppercase tracking-[0.24em] text-neutral-500">
               <Icon size={13} />
               <span>{entry.type || "Entry"}</span>
             </div>
@@ -210,11 +211,17 @@ export default function App() {
 
   const displayedEntries = useMemo(() => {
     const targetDate = activeView === "today" ? todayString() : selectedDate;
-    return entries.filter((entry) => entry.date === targetDate);
+
+    return entries.filter((entry) => {
+      if (!entry.date) return false;
+      return entry.date.slice(0, 10) === targetDate;
+    });
   }, [entries, activeView, selectedDate]);
 
   const totalToday = useMemo(() => {
-    return entries.filter((entry) => entry.date === todayString()).length;
+    return entries.filter(
+      (entry) => entry.date && entry.date.slice(0, 10) === todayString()
+    ).length;
   }, [entries]);
 
   const handleField = (key, value) => {
@@ -374,9 +381,9 @@ export default function App() {
   const previewImage = editor.photoPreview || existingPhotoURL;
 
   return (
-    <div className="min-h-screen text-neutral-900 bg-leica">
+    <div className="min-h-screen bg-leica text-neutral-900">
       <div className="mx-auto max-w-5xl px-4 pb-12 pt-5 sm:px-6 lg:px-8">
-        <header className="mb-5 rounded-[28px] border border-neutral-200 bg-white p-5 shadow-sm sm:p-6">
+        <header className="mb-5 rounded-[28px] border border-neutral-200/70 bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.04)] sm:p-6">
           <div className="mb-3 flex items-start justify-between gap-4">
             <div>
               <p className="mb-2 text-[11px] uppercase tracking-[0.26em] text-neutral-500">
@@ -387,7 +394,7 @@ export default function App() {
               </h1>
             </div>
 
-            <div className="rounded-2xl border border-neutral-200 bg-neutral-50 px-3 py-2 text-right">
+            <div className="rounded-2xl border border-neutral-200/70 bg-white px-3 py-2 text-right">
               <div className="text-[11px] uppercase tracking-[0.22em] text-neutral-500">
                 Today
               </div>
@@ -397,7 +404,7 @@ export default function App() {
             </div>
           </div>
 
-          <div className="text-sm leading-6 text-neutral-600">
+          <div className="text-sm leading-6 text-neutral-500">
             A quiet record of rides, walks, cafes, and small moments — now with
             live sync across devices.
           </div>
@@ -409,7 +416,7 @@ export default function App() {
           ) : null}
         </header>
 
-        <section className="mb-5 rounded-[28px] border border-neutral-200 bg-white p-4 shadow-sm sm:p-5">
+        <section className="mb-5 rounded-[28px] border border-neutral-200/70 bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.04)] sm:p-5">
           <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
             {TYPES.map(({ name, icon: Icon }) => (
               <button
@@ -417,10 +424,10 @@ export default function App() {
                 type="button"
                 onClick={() => handleField("type", name)}
                 className={classNames(
-                  "inline-flex shrink-0 items-center gap-2 rounded-full border px-4 py-2 text-sm transition",
+                  "inline-flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm transition",
                   editor.type === name
-                    ? "border-neutral-900 bg-neutral-900 text-white"
-                    : "border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50"
+                    ? "bg-neutral-900 text-white/95 hover:bg-neutral-800"
+                    : "border border-neutral-200/70 bg-white text-neutral-600 hover:bg-neutral-50"
                 )}
               >
                 <Icon size={16} />
@@ -439,7 +446,7 @@ export default function App() {
                 value={editor.title}
                 onChange={(e) => handleField("title", e.target.value)}
                 placeholder="Add a title"
-                className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-neutral-400"
+                className="w-full rounded-2xl border border-neutral-200/70 bg-white px-4 py-3 text-sm text-neutral-900 outline-none transition focus:border-neutral-400"
               />
             </div>
 
@@ -452,7 +459,7 @@ export default function App() {
                 onChange={(e) => handleField("note", e.target.value)}
                 placeholder="Add a short note"
                 rows={4}
-                className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-neutral-400"
+                className="w-full rounded-2xl border border-neutral-200/70 bg-white px-4 py-3 text-sm text-neutral-900 outline-none transition focus:border-neutral-400"
               />
             </div>
 
@@ -465,7 +472,7 @@ export default function App() {
                   type="date"
                   value={editor.date}
                   onChange={(e) => handleField("date", e.target.value)}
-                  className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-neutral-400"
+                  className="w-full rounded-2xl border border-neutral-200/70 bg-white px-4 py-3 text-sm text-neutral-900 outline-none transition focus:border-neutral-400"
                 />
               </div>
 
@@ -477,7 +484,7 @@ export default function App() {
                   type="time"
                   value={editor.time}
                   onChange={(e) => handleField("time", e.target.value)}
-                  className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-neutral-400"
+                  className="w-full rounded-2xl border border-neutral-200/70 bg-white px-4 py-3 text-sm text-neutral-900 outline-none transition focus:border-neutral-400"
                 />
               </div>
 
@@ -490,7 +497,7 @@ export default function App() {
                   value={editor.place}
                   onChange={(e) => handleField("place", e.target.value)}
                   placeholder="Where was this?"
-                  className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-neutral-400"
+                  className="w-full rounded-2xl border border-neutral-200/70 bg-white px-4 py-3 text-sm text-neutral-900 outline-none transition focus:border-neutral-400"
                 />
               </div>
             </div>
@@ -501,7 +508,7 @@ export default function App() {
               </label>
 
               {previewImage ? (
-                <div className="overflow-hidden rounded-[24px] border border-neutral-200 bg-neutral-50">
+                <div className="overflow-hidden rounded-[24px] border border-neutral-200/70 bg-neutral-50">
                   <div className="aspect-[4/3] w-full overflow-hidden">
                     <img
                       src={previewImage}
@@ -510,8 +517,8 @@ export default function App() {
                     />
                   </div>
 
-                  <div className="flex items-center justify-between gap-3 border-t border-neutral-200 p-3">
-                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700 transition hover:bg-neutral-50">
+                  <div className="flex items-center justify-between gap-3 border-t border-neutral-200/70 p-3">
+                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-neutral-200/70 bg-white px-3 py-2 text-sm text-neutral-600 transition hover:bg-neutral-50">
                       <ImageIcon size={16} />
                       Change photo
                       <input
@@ -525,7 +532,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={handleRemovePhoto}
-                      className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700 transition hover:bg-neutral-50"
+                      className="inline-flex items-center gap-2 rounded-full border border-neutral-200/70 bg-white px-3 py-2 text-sm text-neutral-600 transition hover:bg-neutral-50"
                     >
                       <X size={16} />
                       Remove
@@ -533,7 +540,7 @@ export default function App() {
                   </div>
                 </div>
               ) : (
-                <label className="flex cursor-pointer items-center justify-center gap-2 rounded-[24px] border border-dashed border-neutral-300 bg-neutral-50 px-4 py-10 text-sm text-neutral-600 transition hover:bg-neutral-100">
+                <label className="flex cursor-pointer items-center justify-center gap-2 rounded-[24px] border border-dashed border-neutral-300/70 bg-white px-4 py-10 text-sm text-neutral-600 transition hover:bg-neutral-50">
                   <Camera size={18} />
                   Choose image
                   <input
@@ -550,7 +557,7 @@ export default function App() {
               <button
                 type="submit"
                 disabled={saving}
-                className="inline-flex items-center gap-2 rounded-full bg-neutral-900 px-5 py-3 text-sm font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-full bg-neutral-900 px-5 py-3 text-sm font-medium text-white/95 transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {saving ? (
                   <>
@@ -568,7 +575,7 @@ export default function App() {
                 type="button"
                 onClick={clearEditor}
                 disabled={saving}
-                className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-5 py-3 text-sm font-medium text-neutral-700 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-full border border-neutral-200/70 bg-white px-5 py-3 text-sm font-medium text-neutral-600 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Clear
               </button>
@@ -576,7 +583,7 @@ export default function App() {
           </form>
         </section>
 
-        <section className="mb-5 rounded-[28px] border border-neutral-200 bg-white p-4 shadow-sm sm:p-5">
+        <section className="mb-5 rounded-[28px] border border-neutral-200/70 bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.04)] sm:p-5">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div className="flex gap-2">
               <button
@@ -585,8 +592,8 @@ export default function App() {
                 className={classNames(
                   "rounded-full px-4 py-2 text-sm transition",
                   activeView === "today"
-                    ? "bg-neutral-900 text-white"
-                    : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
+                    ? "bg-neutral-900 text-white/95 hover:bg-neutral-800"
+                    : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
                 )}
               >
                 Today
@@ -598,8 +605,8 @@ export default function App() {
                 className={classNames(
                   "inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm transition",
                   activeView === "history"
-                    ? "bg-neutral-900 text-white"
-                    : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
+                    ? "bg-neutral-900 text-white/95 hover:bg-neutral-800"
+                    : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
                 )}
               >
                 <History size={14} />
@@ -612,10 +619,10 @@ export default function App() {
                 type="date"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
-                className="rounded-full border border-neutral-200 bg-white px-4 py-2 text-sm outline-none transition focus:border-neutral-400"
+                className="rounded-full border border-neutral-200/70 bg-white px-4 py-2 text-sm text-neutral-900 outline-none transition focus:border-neutral-400"
               />
             ) : (
-              <div className="rounded-full bg-neutral-100 px-4 py-2 text-sm text-neutral-600">
+              <div className="rounded-full bg-neutral-100 px-4 py-2 text-sm text-neutral-500">
                 {formatEntryDate(todayString())}
               </div>
             )}
