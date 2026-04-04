@@ -7,8 +7,6 @@ import {
   Clock3,
   Coffee,
   Footprints,
-  History,
-  Image as ImageIcon,
   LoaderCircle,
   MapPin,
   Pencil,
@@ -50,6 +48,9 @@ const emptyEditor = () => ({
   date: todayString(),
   time: currentTimeString(),
   place: "",
+  duration: "",
+  distance: "",
+  route: "",
   existingPhotos: [],
   newPhotos: [],
 });
@@ -100,6 +101,37 @@ function formatTimeLabel(time) {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function parseDurationToMinutes(durationText) {
+  if (!durationText) return 0;
+
+  const text = durationText.toLowerCase().trim();
+  let total = 0;
+
+  const hourMatch = text.match(/(\d+)\s*h/);
+  const minuteMatch = text.match(/(\d+)\s*m/);
+
+  if (hourMatch) total += Number(hourMatch[1]) * 60;
+  if (minuteMatch) total += Number(minuteMatch[1]);
+
+  if (!hourMatch && !minuteMatch) {
+    const asNumber = Number(text);
+    if (!Number.isNaN(asNumber)) total += asNumber;
+  }
+
+  return total;
+}
+
+function formatMinutesAsHours(minutes) {
+  if (!minutes) return "0h";
+
+  const hrs = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+
+  if (hrs && mins) return `${hrs}h ${mins}m`;
+  if (hrs) return `${hrs}h`;
+  return `${mins}m`;
 }
 
 function PhotoMosaic({ photos, alt }) {
@@ -177,9 +209,21 @@ function EntryCard({ entry, onEdit, onDelete }) {
               {entry.title || "Untitled entry"}
             </h3>
 
+            {entry.type === "Ride" && (entry.duration || entry.distance) ? (
+              <p className="mb-2 text-[10px] uppercase tracking-[0.26em] text-[#b3a688]">
+                Ride
+                {entry.duration ? ` · ${entry.duration}` : ""}
+                {entry.distance ? ` · ${entry.distance}` : ""}
+              </p>
+            ) : null}
+
             <p className="min-h-[3.25rem] whitespace-pre-wrap text-[0.95rem] leading-8 text-[#8f816b]">
               {entry.note || " "}
             </p>
+
+            {entry.route ? (
+              <p className="mt-2 text-[0.9rem] text-[#9b8c74]">{entry.route}</p>
+            ) : null}
           </div>
 
           <div className="flex shrink-0 items-center gap-2 pt-0.5">
@@ -310,7 +354,21 @@ function EntryModal({ entry, onClose, onEdit, onDelete }) {
                 {entry.title || "Untitled entry"}
               </h3>
 
-              <div className="flex flex-wrap gap-x-4 gap-y-2 text-[11px] uppercase tracking-[0.22em] text-[#b3a688]">
+              {entry.type === "Ride" && (entry.duration || entry.distance) ? (
+                <div className="mt-2 text-[11px] uppercase tracking-[0.26em] text-[#b3a688]">
+                  Ride
+                  {entry.duration ? ` · ${entry.duration}` : ""}
+                  {entry.distance ? ` · ${entry.distance}` : ""}
+                </div>
+              ) : null}
+
+              {entry.route ? (
+                <div className="mt-3 text-[0.95rem] text-[#8f816b]">
+                  {entry.route}
+                </div>
+              ) : null}
+
+              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-[11px] uppercase tracking-[0.22em] text-[#b3a688]">
                 {entry.date ? <span>{formatHeaderDate(entry.date)}</span> : null}
                 {entry.time ? <span>{formatTimeLabel(entry.time)}</span> : null}
                 {entry.place ? <span>{entry.place}</span> : null}
@@ -341,6 +399,99 @@ function EntryModal({ entry, onClose, onEdit, onDelete }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function MonthlyStatsPanel({ stats }) {
+  if (!stats || stats.length === 0) return null;
+
+  return (
+    <section className="mb-8 rounded-[30px] border border-[#ddd4c4] bg-[#f8f5ee] p-5 shadow-[0_1px_2px_rgba(80,66,38,0.04)]">
+      <div className="mb-5 flex items-center justify-between">
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.34em] text-[#a69473]">
+            Monthly Summary
+          </p>
+          <h2 className="mt-2 text-[1.15rem] font-normal text-[#7d705c]">
+            A quiet record of the month
+          </h2>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        {stats.map((month) => (
+          <div
+            key={month.monthKey}
+            className="rounded-[24px] border border-[#e3dbcf] bg-[#fbf9f3] px-5 py-5"
+          >
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <div className="text-[12px] uppercase tracking-[0.3em] text-[#8f816b]">
+                {month.monthLabel}
+              </div>
+              <div className="text-[11px] uppercase tracking-[0.24em] text-[#b3a688]">
+                {month.totalEntries} entries
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+              <div className="rounded-[18px] border border-[#ece4d8] bg-[#f8f5ee] px-4 py-3">
+                <div className="text-[10px] uppercase tracking-[0.24em] text-[#b3a688]">
+                  Ride
+                </div>
+                <div className="mt-2 text-[1rem] text-[#6f624f]">
+                  {month.rideCount}
+                </div>
+              </div>
+
+              <div className="rounded-[18px] border border-[#ece4d8] bg-[#f8f5ee] px-4 py-3">
+                <div className="text-[10px] uppercase tracking-[0.24em] text-[#b3a688]">
+                  Ride Time
+                </div>
+                <div className="mt-2 text-[1rem] text-[#6f624f]">
+                  {formatMinutesAsHours(month.rideMinutes)}
+                </div>
+              </div>
+
+              <div className="rounded-[18px] border border-[#ece4d8] bg-[#f8f5ee] px-4 py-3">
+                <div className="text-[10px] uppercase tracking-[0.24em] text-[#b3a688]">
+                  Walk
+                </div>
+                <div className="mt-2 text-[1rem] text-[#6f624f]">
+                  {month.walkCount}
+                </div>
+              </div>
+
+              <div className="rounded-[18px] border border-[#ece4d8] bg-[#f8f5ee] px-4 py-3">
+                <div className="text-[10px] uppercase tracking-[0.24em] text-[#b3a688]">
+                  Cafe
+                </div>
+                <div className="mt-2 text-[1rem] text-[#6f624f]">
+                  {month.cafeCount}
+                </div>
+              </div>
+
+              <div className="rounded-[18px] border border-[#ece4d8] bg-[#f8f5ee] px-4 py-3">
+                <div className="text-[10px] uppercase tracking-[0.24em] text-[#b3a688]">
+                  Notes
+                </div>
+                <div className="mt-2 text-[1rem] text-[#6f624f]">
+                  {month.notesCount}
+                </div>
+              </div>
+
+              <div className="rounded-[18px] border border-[#ece4d8] bg-[#f8f5ee] px-4 py-3">
+                <div className="text-[10px] uppercase tracking-[0.24em] text-[#b3a688]">
+                  Total
+                </div>
+                <div className="mt-2 text-[1rem] text-[#6f624f]">
+                  {month.totalEntries}
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -416,7 +567,10 @@ export default function App() {
         (entry.title || "").toLowerCase().includes(q) ||
         (entry.note || "").toLowerCase().includes(q) ||
         (entry.place || "").toLowerCase().includes(q) ||
-        (entry.type || "").toLowerCase().includes(q)
+        (entry.type || "").toLowerCase().includes(q) ||
+        (entry.route || "").toLowerCase().includes(q) ||
+        (entry.duration || "").toLowerCase().includes(q) ||
+        (entry.distance || "").toLowerCase().includes(q)
       );
     });
   }, [normalizedEntries, activeView, searchQuery]);
@@ -459,11 +613,50 @@ export default function App() {
     return monthGroups;
   }, [filteredEntries]);
 
-  const totalToday = useMemo(() => {
-    return entries.filter(
-      (entry) => entry.date && entry.date.slice(0, 10) === todayString()
-    ).length;
-  }, [entries]);
+  const monthlyStats = useMemo(() => {
+    const statsMap = {};
+
+    for (const entry of normalizedEntries) {
+      const monthKey =
+        entry.date && entry.date !== "Unknown date"
+          ? entry.date.slice(0, 7)
+          : "unknown";
+
+      if (!statsMap[monthKey]) {
+        statsMap[monthKey] = {
+          monthKey,
+          monthLabel:
+            monthKey === "unknown"
+              ? "Unknown month"
+              : formatMonthYear(`${monthKey}-01`),
+          totalEntries: 0,
+          rideCount: 0,
+          walkCount: 0,
+          cafeCount: 0,
+          notesCount: 0,
+          rideMinutes: 0,
+        };
+      }
+
+      const bucket = statsMap[monthKey];
+      bucket.totalEntries += 1;
+
+      if (entry.type === "Ride") {
+        bucket.rideCount += 1;
+        bucket.rideMinutes += parseDurationToMinutes(entry.duration);
+      } else if (entry.type === "Walk") {
+        bucket.walkCount += 1;
+      } else if (entry.type === "Cafe") {
+        bucket.cafeCount += 1;
+      } else if (entry.type === "Notes") {
+        bucket.notesCount += 1;
+      }
+    }
+
+    return Object.values(statsMap).sort((a, b) =>
+      b.monthKey.localeCompare(a.monthKey)
+    );
+  }, [normalizedEntries]);
 
   const handleField = (key, value) => {
     setEditor((prev) => ({
@@ -546,6 +739,9 @@ export default function App() {
       date: entry.date || todayString(),
       time: entry.time || currentTimeString(),
       place: entry.place || "",
+      duration: entry.duration || "",
+      distance: entry.distance || "",
+      route: entry.route || "",
       existingPhotos: entry.photos || [],
       newPhotos: [],
     });
@@ -587,6 +783,9 @@ export default function App() {
     const cleanTitle = editor.title.trim();
     const cleanNote = editor.note.trim();
     const cleanPlace = editor.place.trim();
+    const cleanDuration = editor.duration.trim();
+    const cleanDistance = editor.distance.trim();
+    const cleanRoute = editor.route.trim();
 
     if (!cleanTitle && !cleanNote && !cleanPlace) {
       alert("Add at least a title, note, or place.");
@@ -612,6 +811,9 @@ export default function App() {
         date: editor.date,
         time: editor.time,
         place: cleanPlace,
+        duration: cleanDuration,
+        distance: cleanDistance,
+        route: cleanRoute,
         photos: finalPhotos,
       };
 
@@ -803,6 +1005,49 @@ export default function App() {
               </div>
             </div>
 
+            {editor.type === "Ride" ? (
+              <div className="grid gap-5 md:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-[11px] uppercase tracking-[0.34em] text-[#9f8d73]">
+                    Duration
+                  </label>
+                  <input
+                    type="text"
+                    value={editor.duration}
+                    onChange={(e) => handleField("duration", e.target.value)}
+                    placeholder="1h 45m"
+                    className="w-full rounded-[24px] border border-[#ddd4c4] bg-[#fbf9f3] px-6 py-4 text-[1rem] text-[#675b49] outline-none transition placeholder:text-[#b3a691] focus:border-[#cfc2aa]"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-[11px] uppercase tracking-[0.34em] text-[#9f8d73]">
+                    Distance (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={editor.distance}
+                    onChange={(e) => handleField("distance", e.target.value)}
+                    placeholder="32 km"
+                    className="w-full rounded-[24px] border border-[#ddd4c4] bg-[#fbf9f3] px-6 py-4 text-[1rem] text-[#675b49] outline-none transition placeholder:text-[#b3a691] focus:border-[#cfc2aa]"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="mb-2 block text-[11px] uppercase tracking-[0.34em] text-[#9f8d73]">
+                    Route
+                  </label>
+                  <input
+                    type="text"
+                    value={editor.route}
+                    onChange={(e) => handleField("route", e.target.value)}
+                    placeholder="Forest Hill → Brick Works"
+                    className="w-full rounded-[24px] border border-[#ddd4c4] bg-[#fbf9f3] px-6 py-4 text-[1rem] text-[#675b49] outline-none transition placeholder:text-[#b3a691] focus:border-[#cfc2aa]"
+                  />
+                </div>
+              </div>
+            ) : null}
+
             <div>
               <label className="mb-2 block text-[11px] uppercase tracking-[0.34em] text-[#9f8d73]">
                 Photos ({editorPreviewCount}/{MAX_IMAGES})
@@ -902,6 +1147,10 @@ export default function App() {
             </div>
           </form>
         </section>
+
+        {activeView === "history" && !loadingEntries ? (
+          <MonthlyStatsPanel stats={monthlyStats} />
+        ) : null}
 
         {loadingEntries ? (
           <div className="rounded-[28px] border border-[#ddd4c4] bg-[#f8f5ee] px-6 py-8 text-[15px] text-[#8f816b]">
