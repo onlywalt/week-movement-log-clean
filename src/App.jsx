@@ -1,1238 +1,762 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bike,
+  Footprints,
+  Coffee,
   BookOpen,
   CalendarDays,
-  Camera,
   Clock3,
-  Coffee,
-  Footprints,
-  LoaderCircle,
   MapPin,
+  Camera,
+  Image as ImageIcon,
   Pencil,
-  Search,
   Trash2,
   X,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
-import {
-  addEntry,
-  deleteEntry,
-  deletePhotosByPaths,
-  subscribeToEntries,
-  updateEntry,
-  uploadEntryPhotos,
-} from "./storage";
 
-const TYPES = [
-  { name: "Ride", icon: Bike },
-  { name: "Walk", icon: Footprints },
-  { name: "Cafe", icon: Coffee },
-  { name: "Notes", icon: BookOpen },
+const STORAGE_KEY = "daily-frame-journal-v1";
+
+const ACTIVITY_TYPES = [
+  {
+    key: "Ride",
+    label: "Ride",
+    icon: Bike,
+    needsDuration: true,
+    titlePlaceholder: "Ride title",
+    notePlaceholder: "Route, effort, weather, a detail worth keeping...",
+  },
+  {
+    key: "Walk",
+    label: "Walk",
+    icon: Footprints,
+    needsDuration: true,
+    titlePlaceholder: "Walk title",
+    notePlaceholder: "Where it led, what you noticed, pace, mood...",
+  },
+  {
+    key: "Cafe",
+    label: "Cafe",
+    icon: Coffee,
+    needsDuration: false,
+    titlePlaceholder: "Cafe title",
+    notePlaceholder: "Coffee, pastry, service, atmosphere...",
+  },
+  {
+    key: "Journal",
+    label: "Journal",
+    icon: BookOpen,
+    needsDuration: false,
+    titlePlaceholder: "Journal title",
+    notePlaceholder: "A note from the day...",
+  },
 ];
 
-const MAX_IMAGES = 4;
-
-const todayString = () => new Date().toISOString().slice(0, 10);
-
-const currentTimeString = () => {
-  const now = new Date();
-  const hh = String(now.getHours()).padStart(2, "0");
-  const mm = String(now.getMinutes()).padStart(2, "0");
-  return `${hh}:${mm}`;
-};
-
-const emptyEditor = () => ({
-  type: "Ride",
+const emptyEntry = (type = "Ride") => ({
+  id: "",
+  type,
   title: "",
   note: "",
-  date: todayString(),
-  time: currentTimeString(),
+  date: todayDate(),
+  time: nowTime(),
   place: "",
   duration: "",
-  distance: "",
-  route: "",
-  existingPhotos: [],
-  newPhotos: [],
+  rating: "",
+  images: [],
+  createdAt: new Date().toISOString(),
 });
 
-function classNames(...items) {
-  return items.filter(Boolean).join(" ");
+function todayDate() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
-function formatHeaderDate(dateString) {
-  if (!dateString) return "";
-  const d = new Date(`${dateString}T00:00:00`);
+function nowTime() {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function formatDisplayDate(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(`${dateStr}T12:00:00`);
   return d.toLocaleDateString(undefined, {
     weekday: "short",
-    month: "short",
+    month: "long",
     day: "numeric",
     year: "numeric",
   });
 }
 
-function formatCardDate(dateString) {
-  if (!dateString) return "";
-  const d = new Date(`${dateString}T00:00:00`);
-  return d.toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function formatMonthYear(dateString) {
-  if (!dateString) return "";
-  const d = new Date(`${dateString}T00:00:00`);
+function formatMonthYear(dateStr) {
+  const d = new Date(`${dateStr}T12:00:00`);
   return d.toLocaleDateString(undefined, {
     month: "long",
     year: "numeric",
   });
 }
 
-function formatTimeLabel(time) {
-  if (!time) return "";
-  const [h, m] = time.split(":");
-  if (h == null || m == null) return time;
+function monthKeyFromDate(dateStr) {
+  return dateStr?.slice(0, 7) || todayDate().slice(0, 7);
+}
 
-  const date = new Date();
-  date.setHours(Number(h), Number(m), 0, 0);
+function monthLabel(monthKey) {
+  const [year, month] = monthKey.split("-");
+  const d = new Date(Number(year), Number(month) - 1, 1);
+  return d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+}
 
-  return date.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
+function sortEntries(entries) {
+  return [...entries].sort((a, b) => {
+    const aStamp = `${a.date || ""} ${a.time || ""}`;
+    const bStamp = `${b.date || ""} ${b.time || ""}`;
+    return bStamp.localeCompare(aStamp);
   });
 }
 
-function parseDurationToMinutes(durationText) {
-  if (!durationText) return 0;
-
-  const text = durationText.toLowerCase().trim();
-  let total = 0;
-
-  const hourMatch = text.match(/(\d+)\s*h/);
-  const minuteMatch = text.match(/(\d+)\s*m/);
-
-  if (hourMatch) total += Number(hourMatch[1]) * 60;
-  if (minuteMatch) total += Number(minuteMatch[1]);
-
-  if (!hourMatch && !minuteMatch) {
-    const asNumber = Number(text);
-    if (!Number.isNaN(asNumber)) total += asNumber;
-  }
-
-  return total;
+function readFilesAsDataUrls(files) {
+  return Promise.all(
+    Array.from(files).map(
+      (file) =>
+        new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve({ id: crypto.randomUUID(), name: file.name, url: reader.result });
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        })
+    )
+  );
 }
 
-function formatMinutesAsHours(minutes) {
-  if (!minutes) return "0h";
-
-  const hrs = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-
-  if (hrs && mins) return `${hrs}h ${mins}m`;
-  if (hrs) return `${hrs}h`;
-  return `${mins}m`;
+function cls(...items) {
+  return items.filter(Boolean).join(" ");
 }
 
-function PhotoMosaic({ photos, alt }) {
-  if (!photos || photos.length === 0) {
-    return <div className="aspect-[1.18/1] w-full bg-[#ece7dc]" />;
-  }
+export default function App() {
+  const [entries, setEntries] = useState([]);
+  const [activeView, setActiveView] = useState("Journal");
+  const [selectedType, setSelectedType] = useState("Ride");
+  const [form, setForm] = useState(emptyEntry("Ride"));
+  const [editingId, setEditingId] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState(todayDate().slice(0, 7));
+  const [lightboxImage, setLightboxImage] = useState("");
+  const fileInputRef = useRef(null);
 
-  if (photos.length === 1) {
-    return (
-      <div className="aspect-[1.18/1] w-full overflow-hidden bg-[#ece7dc]">
-        <img
-          src={photos[0].url}
-          alt={alt}
-          className="h-full w-full object-cover"
-          loading="lazy"
-        />
-      </div>
-    );
-  }
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          const sorted = sortEntries(parsed);
+          setEntries(sorted);
+          if (sorted[0]?.date) setSelectedMonth(monthKeyFromDate(sorted[0].date));
+        }
+      }
+    } catch (error) {
+      console.error("Failed to read entries", error);
+    }
+  }, []);
 
-  if (photos.length === 2) {
-    return (
-      <div className="grid aspect-[1.18/1] w-full grid-cols-2 gap-[2px] overflow-hidden bg-[#ece7dc]">
-        {photos.slice(0, 2).map((photo, index) => (
-          <img
-            key={photo.url + index}
-            src={photo.url}
-            alt={alt}
-            className="h-full w-full object-cover"
-            loading="lazy"
-          />
-        ))}
-      </div>
-    );
-  }
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+    } catch (error) {
+      console.error("Failed to save entries", error);
+    }
+  }, [entries]);
+
+  useEffect(() => {
+    setForm((prev) => ({
+      ...prev,
+      type: selectedType,
+      duration: ACTIVITY_TYPES.find((item) => item.key === selectedType)?.needsDuration ? prev.duration : "",
+      rating: selectedType === "Cafe" ? prev.rating : "",
+    }));
+  }, [selectedType]);
+
+  const activityMeta = useMemo(
+    () => ACTIVITY_TYPES.find((item) => item.key === selectedType) || ACTIVITY_TYPES[0],
+    [selectedType]
+  );
+
+  const groupedJournal = useMemo(() => {
+    const sorted = sortEntries(entries);
+    return sorted.reduce((acc, entry) => {
+      if (!acc[entry.date]) acc[entry.date] = [];
+      acc[entry.date].push(entry);
+      return acc;
+    }, {});
+  }, [entries]);
+
+  const monthsWithEntries = useMemo(() => {
+    const unique = [...new Set(entries.map((item) => monthKeyFromDate(item.date)))];
+    return unique.sort((a, b) => b.localeCompare(a));
+  }, [entries]);
+
+  useEffect(() => {
+    if (!monthsWithEntries.length) return;
+    if (!monthsWithEntries.includes(selectedMonth)) {
+      setSelectedMonth(monthsWithEntries[0]);
+    }
+  }, [monthsWithEntries, selectedMonth]);
+
+  const summaryEntries = useMemo(
+    () => entries.filter((item) => monthKeyFromDate(item.date) === selectedMonth),
+    [entries, selectedMonth]
+  );
+
+  const summaryStats = useMemo(() => {
+    const stats = {
+      total: summaryEntries.length,
+      Ride: 0,
+      Walk: 0,
+      Cafe: 0,
+      Journal: 0,
+      rideMinutes: 0,
+      walkMinutes: 0,
+      cafeRated: 0,
+      images: 0,
+    };
+
+    summaryEntries.forEach((item) => {
+      if (stats[item.type] !== undefined) stats[item.type] += 1;
+      if (item.type === "Ride") stats.rideMinutes += Number(item.duration || 0);
+      if (item.type === "Walk") stats.walkMinutes += Number(item.duration || 0);
+      if (item.type === "Cafe" && item.rating) stats.cafeRated += 1;
+      stats.images += Array.isArray(item.images) ? item.images.length : 0;
+    });
+
+    return stats;
+  }, [summaryEntries]);
+
+  const summaryGroups = useMemo(() => {
+    return summaryEntries.reduce((acc, item) => {
+      const label = formatDisplayDate(item.date);
+      if (!acc[label]) acc[label] = [];
+      acc[label].push(item);
+      return acc;
+    }, {});
+  }, [summaryEntries]);
+
+  const handleTypeSelect = (type) => {
+    setSelectedType(type);
+    if (!editingId) {
+      setForm((prev) => ({
+        ...emptyEntry(type),
+        date: prev.date || todayDate(),
+        time: prev.time || nowTime(),
+        images: prev.images || [],
+      }));
+    }
+  };
+
+  const handleFormChange = (key, value) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const clearForm = () => {
+    setEditingId("");
+    setSelectedType("Ride");
+    setForm(emptyEntry("Ride"));
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleImages = async (event) => {
+    const files = event.target.files;
+    if (!files?.length) return;
+    try {
+      const newImages = await readFilesAsDataUrls(files);
+      setForm((prev) => ({
+        ...prev,
+        images: [...(prev.images || []), ...newImages],
+      }));
+    } catch (error) {
+      console.error("Image load failed", error);
+    }
+  };
+
+  const removeImage = (imageId) => {
+    setForm((prev) => ({
+      ...prev,
+      images: (prev.images || []).filter((img) => img.id !== imageId),
+    }));
+  };
+
+  const handleSubmit = () => {
+    const next = {
+      ...form,
+      id: editingId || crypto.randomUUID(),
+      type: selectedType,
+      createdAt: form.createdAt || new Date().toISOString(),
+    };
+
+    if (!next.title.trim() && !next.note.trim() && !next.place.trim()) return;
+
+    setEntries((prev) => {
+      const updated = editingId
+        ? prev.map((item) => (item.id === editingId ? next : item))
+        : [next, ...prev];
+      return sortEntries(updated);
+    });
+
+    setSelectedMonth(monthKeyFromDate(next.date));
+    clearForm();
+  };
+
+  const handleEdit = (entry) => {
+    setEditingId(entry.id);
+    setSelectedType(entry.type);
+    setActiveView("Journal");
+    setForm({
+      ...entry,
+      images: Array.isArray(entry.images) ? entry.images : [],
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleDelete = (id) => {
+    setEntries((prev) => prev.filter((item) => item.id !== id));
+    if (editingId === id) clearForm();
+  };
+
+  const goMonth = (direction) => {
+    const [year, month] = selectedMonth.split("-").map(Number);
+    const d = new Date(year, month - 1 + direction, 1);
+    const nextMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    setSelectedMonth(nextMonth);
+  };
 
   return (
-    <div className="grid aspect-[1.18/1] w-full grid-cols-2 grid-rows-2 gap-[2px] overflow-hidden bg-[#ece7dc]">
-      {photos.slice(0, 4).map((photo, index) => (
-        <div key={photo.url + index} className="relative h-full w-full">
-          <img
-            src={photo.url}
-            alt={alt}
-            className="h-full w-full object-cover"
-            loading="lazy"
-          />
-          {index === 3 && photos.length > 4 ? (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/35 text-lg font-medium text-white">
-              +{photos.length - 4}
+    <div className="min-h-screen bg-[#f6f3ee] text-[#2d2a26]">
+      <div className="mx-auto max-w-3xl px-4 pb-24 pt-6 sm:px-6">
+        <header className="mb-5 rounded-[28px] border border-[#d9d1c5] bg-[#fbf8f3] px-5 py-5 shadow-[0_10px_30px_rgba(60,50,40,0.04)]">
+          <div className="mb-3 flex items-start justify-between gap-4">
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.24em] text-[#8f816b]">Daily Frame.</div>
+              <h1 className="mt-1 text-[27px] font-medium tracking-[-0.03em] text-[#3a342d]">Ride the day. Keep the moment.</h1>
             </div>
-          ) : null}
-        </div>
-      ))}
+            <div className="hidden text-right sm:block">
+              <div className="text-[11px] uppercase tracking-[0.24em] text-[#9b907f]">Month</div>
+              <div className="mt-1 text-sm text-[#60584f]">{monthLabel(selectedMonth)}</div>
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            {[
+              { key: "Journal", label: "Journal" },
+              { key: "Summary", label: "Summary" },
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveView(tab.key)}
+                className={cls(
+                  "rounded-full border px-4 py-2 text-sm transition",
+                  activeView === tab.key
+                    ? "border-[#8f816b] bg-[#8f816b] text-white"
+                    : "border-[#d8d0c4] bg-white text-[#655c52] hover:border-[#beb3a4]"
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </header>
+
+        <section className="mb-5 rounded-[28px] border border-[#ded6ca] bg-[#fbf8f4] p-4 shadow-[0_10px_24px_rgba(60,50,40,0.04)] sm:p-5">
+          <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
+            {ACTIVITY_TYPES.map((item) => {
+              const Icon = item.icon;
+              const active = selectedType === item.key;
+              return (
+                <button
+                  key={item.key}
+                  onClick={() => handleTypeSelect(item.key)}
+                  className={cls(
+                    "inline-flex shrink-0 items-center gap-2 rounded-full border px-3.5 py-2 text-sm transition",
+                    active
+                      ? "border-[#8f816b] bg-[#efe7dc] text-[#433b32]"
+                      : "border-[#ddd4c7] bg-white text-[#6b6358] hover:border-[#c7bcae]"
+                  )}
+                >
+                  <Icon size={15} />
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="grid gap-3">
+            <div>
+              <label className="mb-1 block text-[11px] uppercase tracking-[0.2em] text-[#8d8171]">Title</label>
+              <input
+                value={form.title}
+                onChange={(e) => handleFormChange("title", e.target.value)}
+                placeholder={activityMeta.titlePlaceholder}
+                className="w-full rounded-2xl border border-[#d9d1c5] bg-white px-4 py-3 text-sm outline-none transition placeholder:text-[#b3a89b] focus:border-[#8f816b]"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[11px] uppercase tracking-[0.2em] text-[#8d8171]">Note</label>
+              <textarea
+                value={form.note}
+                onChange={(e) => handleFormChange("note", e.target.value)}
+                placeholder={activityMeta.notePlaceholder}
+                rows={4}
+                className="w-full rounded-2xl border border-[#d9d1c5] bg-white px-4 py-3 text-sm outline-none transition placeholder:text-[#b3a89b] focus:border-[#8f816b]"
+              />
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field icon={CalendarDays} label="Date">
+                <input
+                  type="date"
+                  value={form.date}
+                  onChange={(e) => handleFormChange("date", e.target.value)}
+                  className="w-full bg-transparent text-sm outline-none"
+                />
+              </Field>
+              <Field icon={Clock3} label="Time">
+                <input
+                  type="time"
+                  value={form.time}
+                  onChange={(e) => handleFormChange("time", e.target.value)}
+                  className="w-full bg-transparent text-sm outline-none"
+                />
+              </Field>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field icon={MapPin} label="Place">
+                <input
+                  value={form.place}
+                  onChange={(e) => handleFormChange("place", e.target.value)}
+                  placeholder="Location"
+                  className="w-full bg-transparent text-sm outline-none placeholder:text-[#b3a89b]"
+                />
+              </Field>
+
+              {activityMeta.needsDuration ? (
+                <Field icon={Clock3} label="Duration">
+                  <input
+                    inputMode="numeric"
+                    value={form.duration}
+                    onChange={(e) => handleFormChange("duration", e.target.value.replace(/[^0-9]/g, ""))}
+                    placeholder="Minutes"
+                    className="w-full bg-transparent text-sm outline-none placeholder:text-[#b3a89b]"
+                  />
+                </Field>
+              ) : selectedType === "Cafe" ? (
+                <Field icon={Coffee} label="Rating">
+                  <input
+                    value={form.rating}
+                    onChange={(e) => handleFormChange("rating", e.target.value)}
+                    placeholder="Optional"
+                    className="w-full bg-transparent text-sm outline-none placeholder:text-[#b3a89b]"
+                  />
+                </Field>
+              ) : (
+                <div className="hidden sm:block" />
+              )}
+            </div>
+
+            <div>
+              <label className="mb-2 block text-[11px] uppercase tracking-[0.2em] text-[#8d8171]">Photos</label>
+              <div className="rounded-[24px] border border-[#d9d1c5] bg-white p-3">
+                <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-[#cfc6b8] px-4 py-5 text-sm text-[#6d645a] transition hover:border-[#8f816b] hover:text-[#494037]">
+                  <Camera size={16} />
+                  Choose image
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleImages}
+                    className="hidden"
+                  />
+                </label>
+
+                {form.images?.length > 0 ? (
+                  <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+                    {form.images.map((img) => (
+                      <div key={img.id} className="group relative overflow-hidden rounded-2xl border border-[#e2dbd0] bg-[#f3eee7]">
+                        <img src={img.url} alt={img.name || "Upload"} className="aspect-square h-full w-full object-cover" />
+                        <button
+                          onClick={() => removeImage(img.id)}
+                          className="absolute right-1.5 top-1.5 rounded-full bg-[rgba(40,35,30,0.78)] p-1 text-white opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100"
+                          aria-label="Remove image"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={handleSubmit}
+                className="rounded-full bg-[#8f816b] px-5 py-2.5 text-sm text-white transition hover:bg-[#7d705d]"
+              >
+                {editingId ? "Update Entry" : "Add Entry"}
+              </button>
+              <button
+                onClick={clearForm}
+                className="rounded-full border border-[#d6cec2] bg-white px-5 py-2.5 text-sm text-[#645c53] transition hover:border-[#bdb2a4]"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {activeView === "Journal" ? (
+          <section className="space-y-6">
+            {Object.keys(groupedJournal).length === 0 ? (
+              <EmptyState
+                title="No entries yet."
+                text="Start with a ride, a walk, a cafe stop, or a small note from the day."
+              />
+            ) : (
+              Object.entries(groupedJournal).map(([date, dayEntries]) => (
+                <div key={date}>
+                  <div className="mb-3">
+                    <div className="text-[11px] uppercase tracking-[0.24em] text-[#8f816b]">{formatMonthYear(date)}</div>
+                    <h2 className="mt-1 text-lg font-medium tracking-[-0.02em] text-[#3b352d]">{formatDisplayDate(date)}</h2>
+                  </div>
+
+                  <div className="space-y-3">
+                    {dayEntries.map((entry) => (
+                      <EntryCard
+                        key={entry.id}
+                        entry={entry}
+                        onEdit={() => handleEdit(entry)}
+                        onDelete={() => handleDelete(entry.id)}
+                        onImageClick={(url) => setLightboxImage(url)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
+          </section>
+        ) : (
+          <section className="space-y-5">
+            <div className="rounded-[28px] border border-[#ddd5c8] bg-[#fbf8f4] p-4 shadow-[0_10px_24px_rgba(60,50,40,0.04)] sm:p-5">
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  onClick={() => goMonth(-1)}
+                  className="rounded-full border border-[#d5ccbf] bg-white p-2 text-[#645b51] hover:border-[#bcb0a1]"
+                  aria-label="Previous month"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+
+                <div className="text-center">
+                  <div className="text-[11px] uppercase tracking-[0.24em] text-[#8f816b]">Monthly Summary</div>
+                  <h2 className="mt-1 text-[24px] font-medium tracking-[-0.03em] text-[#3a342d]">{monthLabel(selectedMonth)}</h2>
+                </div>
+
+                <button
+                  onClick={() => goMonth(1)}
+                  className="rounded-full border border-[#d5ccbf] bg-white p-2 text-[#645b51] hover:border-[#bcb0a1]"
+                  aria-label="Next month"
+                >
+                  <ChevronRight size={18} />
+                </button>
+              </div>
+
+              {monthsWithEntries.length > 0 ? (
+                <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+                  {monthsWithEntries.map((month) => (
+                    <button
+                      key={month}
+                      onClick={() => setSelectedMonth(month)}
+                      className={cls(
+                        "shrink-0 rounded-full border px-3 py-1.5 text-sm transition",
+                        month === selectedMonth
+                          ? "border-[#8f816b] bg-[#efe7dc] text-[#433b32]"
+                          : "border-[#ddd4c7] bg-white text-[#6b6358]"
+                      )}
+                    >
+                      {monthLabel(month)}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <StatCard label="Total entries" value={summaryStats.total} />
+              <StatCard label="Rides" value={summaryStats.Ride} sub={summaryStats.rideMinutes ? `${summaryStats.rideMinutes} min` : ""} />
+              <StatCard label="Walks" value={summaryStats.Walk} sub={summaryStats.walkMinutes ? `${summaryStats.walkMinutes} min` : ""} />
+              <StatCard label="Cafes" value={summaryStats.Cafe} sub={summaryStats.cafeRated ? `${summaryStats.cafeRated} rated` : ""} />
+              <StatCard label="Journal notes" value={summaryStats.Journal} />
+              <StatCard label="Photos" value={summaryStats.images} />
+            </div>
+
+            {summaryEntries.length === 0 ? (
+              <EmptyState
+                title="No entries for this month."
+                text="Try another month or add a new note, ride, walk, or cafe visit."
+              />
+            ) : (
+              <div className="space-y-5">
+                {Object.entries(summaryGroups).map(([label, dayEntries]) => (
+                  <div key={label}>
+                    <div className="mb-2 text-[11px] uppercase tracking-[0.22em] text-[#8f816b]">{label}</div>
+                    <div className="space-y-3">
+                      {dayEntries.map((entry) => (
+                        <EntryCard
+                          key={entry.id}
+                          entry={entry}
+                          onEdit={() => handleEdit(entry)}
+                          onDelete={() => handleDelete(entry.id)}
+                          onImageClick={(url) => setLightboxImage(url)}
+                          compact
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+      </div>
+
+      {lightboxImage ? (
+        <button
+          onClick={() => setLightboxImage("")}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(20,18,16,0.88)] p-4"
+        >
+          <img src={lightboxImage} alt="Expanded entry" className="max-h-[92vh] max-w-[92vw] rounded-2xl object-contain" />
+        </button>
+      ) : null}
     </div>
   );
 }
 
-function EntryCard({ entry, onEdit, onDelete }) {
-  const Icon =
-    TYPES.find((item) => item.name === entry.type)?.icon || BookOpen;
+function Field({ icon: Icon, label, children }) {
+  return (
+    <div className="rounded-2xl border border-[#d9d1c5] bg-white px-4 py-3">
+      <div className="mb-1 flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-[#8d8171]">
+        <Icon size={13} />
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function StatCard({ label, value, sub = "" }) {
+  return (
+    <div className="rounded-[24px] border border-[#ddd5c8] bg-[#fbf8f4] px-4 py-4 shadow-[0_8px_20px_rgba(60,50,40,0.03)]">
+      <div className="text-[11px] uppercase tracking-[0.22em] text-[#8f816b]">{label}</div>
+      <div className="mt-2 text-[30px] font-medium tracking-[-0.04em] text-[#3a342d]">{value}</div>
+      {sub ? <div className="mt-1 text-sm text-[#6b6358]">{sub}</div> : null}
+    </div>
+  );
+}
+
+function EntryCard({ entry, onEdit, onDelete, onImageClick, compact = false }) {
+  const typeMeta = ACTIVITY_TYPES.find((item) => item.key === entry.type) || ACTIVITY_TYPES[0];
+  const Icon = typeMeta.icon;
 
   return (
-    <article className="overflow-hidden rounded-[28px] border border-[#ded7ca] bg-[#f8f5ee] shadow-[0_1px_2px_rgba(80,66,38,0.04)]">
-      <PhotoMosaic photos={entry.photos} alt={entry.title || entry.type} />
+    <article className="overflow-hidden rounded-[28px] border border-[#ddd5c8] bg-[#fbf8f4] shadow-[0_10px_24px_rgba(60,50,40,0.04)]">
+      {entry.images?.length ? (
+        <div className={cls("grid gap-[1px] bg-[#e7dfd4]", entry.images.length === 1 ? "grid-cols-1" : "grid-cols-2")}>
+          {entry.images.map((img) => (
+            <button
+              key={img.id}
+              onClick={() => onImageClick(img.url)}
+              className="bg-[#f3eee7]"
+            >
+              <img
+                src={img.url}
+                alt={img.name || entry.title || entry.type}
+                className={cls(
+                  "w-full object-cover",
+                  entry.images.length === 1 ? "max-h-[420px]" : compact ? "h-40" : "h-48"
+                )}
+              />
+            </button>
+          ))}
+        </div>
+      ) : null}
 
-      <div className="px-6 pb-4 pt-5">
-        <div className="mb-4 flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="mb-3 flex items-center gap-2 text-[10px] uppercase tracking-[0.26em] text-[#b3a688]">
-              <Icon size={12} strokeWidth={1.8} />
-              <span>{entry.type || "Entry"}</span>
+      <div className="p-4 sm:p-5">
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <div className="mb-1 flex items-center gap-2 text-[11px] uppercase tracking-[0.22em] text-[#8f816b]">
+              <Icon size={13} />
+              {entry.type}
+              {entry.time ? <span className="text-[#b0a393]">|</span> : null}
+              {entry.time ? <span>{entry.time}</span> : null}
+              {entry.place ? <span className="text-[#b0a393]">|</span> : null}
+              {entry.place ? <span>{entry.place}</span> : null}
             </div>
-
-            <h3 className="mb-3 text-[1.05rem] font-normal leading-7 text-[#6f624f]">
-              {entry.title || "Untitled entry"}
-            </h3>
-
-            {entry.type === "Ride" && (entry.duration || entry.distance) ? (
-              <p className="mb-2 text-[10px] uppercase tracking-[0.26em] text-[#b3a688]">
-                Ride
-                {entry.duration ? ` · ${entry.duration}` : ""}
-                {entry.distance ? ` · ${entry.distance}` : ""}
-              </p>
-            ) : null}
-
-            <p className="min-h-[3.25rem] whitespace-pre-wrap text-[0.95rem] leading-8 text-[#8f816b]">
-              {entry.note || " "}
-            </p>
-
-            {entry.route ? (
-              <p className="mt-2 text-[0.9rem] text-[#9b8c74]">{entry.route}</p>
-            ) : null}
+            <h3 className="text-[21px] font-medium tracking-[-0.03em] text-[#3a342d]">{entry.title || entry.type}</h3>
           </div>
 
-          <div className="flex shrink-0 items-center gap-2 pt-0.5">
+          <div className="flex gap-2">
             <button
-              type="button"
-              onClick={() => onEdit(entry)}
-              className="rounded-full border border-[#ddd4c4] bg-[#f8f5ee] p-2 text-[#b1a184] transition hover:bg-[#f2ede3] hover:text-[#7d705c]"
+              onClick={onEdit}
+              className="rounded-full border border-[#d6cec2] bg-white p-2 text-[#645c53] hover:border-[#bdb2a4]"
               aria-label="Edit entry"
-              title="Edit entry"
             >
-              <Pencil size={15} strokeWidth={1.8} />
+              <Pencil size={15} />
             </button>
-
             <button
-              type="button"
-              onClick={() => onDelete(entry)}
-              className="rounded-full border border-[#ddd4c4] bg-[#f8f5ee] p-2 text-[#b1a184] transition hover:bg-[#f2ede3] hover:text-[#7d705c]"
+              onClick={onDelete}
+              className="rounded-full border border-[#d6cec2] bg-white p-2 text-[#645c53] hover:border-[#bdb2a4]"
               aria-label="Delete entry"
-              title="Delete entry"
             >
-              <Trash2 size={15} strokeWidth={1.8} />
+              <Trash2 size={15} />
             </button>
           </div>
         </div>
 
-        <div className="mt-4 border-t border-[#e8e0d4] pt-3 text-[10px] uppercase tracking-[0.22em] text-[#b9ad92]">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            {entry.date ? (
-              <span className="inline-flex items-center gap-1.5">
-                <CalendarDays size={11} strokeWidth={1.8} />
-                {formatCardDate(entry.date)}
-              </span>
+        {(entry.duration || entry.rating) && (
+          <div className="mb-3 flex flex-wrap gap-2 text-xs text-[#62594f]">
+            {entry.duration ? (
+              <span className="rounded-full bg-[#efe7dc] px-3 py-1">{entry.duration} min</span>
             ) : null}
-
-            {entry.time ? (
-              <span className="inline-flex items-center gap-1.5">
-                <Clock3 size={11} strokeWidth={1.8} />
-                {formatTimeLabel(entry.time)}
-              </span>
-            ) : null}
-
-            {entry.place ? (
-              <span className="inline-flex items-center gap-1.5">
-                <MapPin size={11} strokeWidth={1.8} />
-                {entry.place}
-              </span>
-            ) : null}
+            {entry.rating ? <span className="rounded-full bg-[#efe7dc] px-3 py-1">Rating: {entry.rating}</span> : null}
           </div>
+        )}
+
+        {entry.note ? <p className="text-[15px] leading-6 text-[#4f473f]">{entry.note}</p> : null}
+
+        <div className="mt-4 flex items-center gap-2 text-[12px] text-[#8a7e6e]">
+          <CalendarDays size={13} />
+          {formatDisplayDate(entry.date)}
+          {entry.images?.length ? (
+            <>
+              <span className="text-[#b0a393]">•</span>
+              <ImageIcon size={13} />
+              {entry.images.length}
+            </>
+          ) : null}
         </div>
       </div>
     </article>
   );
 }
 
-function HistoryTile({ entry, onOpen }) {
-  const hasPhotos = entry.photos && entry.photos.length > 0;
-
+function EmptyState({ title, text }) {
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(entry)}
-      className="group relative overflow-hidden rounded-[22px] bg-[#ece7dc] text-left"
-    >
-      {hasPhotos ? (
-        <>
-          <div className="aspect-square w-full overflow-hidden">
-            <img
-              src={entry.photos[0].url}
-              alt={entry.title || entry.type}
-              className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]"
-              loading="lazy"
-            />
-          </div>
-
-          {entry.photos.length > 1 ? (
-            <div className="absolute right-2 top-2 rounded-full bg-[#f8f5ee]/90 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-[#8c7b5f]">
-              +{entry.photos.length - 1}
-            </div>
-          ) : null}
-        </>
-      ) : (
-        <div className="flex aspect-square w-full flex-col justify-between p-4 text-[#7d705c]">
-          <div className="text-[10px] uppercase tracking-[0.24em] text-[#b3a688]">
-            {entry.type}
-          </div>
-          <div>
-            <div className="mb-2 text-base leading-6">
-              {entry.title || "Untitled entry"}
-            </div>
-            <div className="line-clamp-4 text-sm leading-6 text-[#8f816b]">
-              {entry.note || entry.place || ""}
-            </div>
-          </div>
-        </div>
-      )}
-    </button>
-  );
-}
-
-function EntryModal({ entry, onClose, onEdit, onDelete }) {
-  if (!entry) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4 py-6">
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-[28px] border border-[#ddd4c4] bg-[#f8f5ee] shadow-xl">
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#e8e0d4] bg-[#f8f5ee]/95 px-5 py-4 backdrop-blur">
-          <div className="text-[11px] uppercase tracking-[0.28em] text-[#a69473]">
-            {entry.type} · {entry.date ? formatHeaderDate(entry.date) : "No date"}
-          </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full border border-[#ddd4c4] bg-[#f8f5ee] p-2 text-[#9e8d73] transition hover:bg-[#f4efe5]"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="p-5 sm:p-6">
-          <div className="overflow-hidden rounded-[24px]">
-            <PhotoMosaic photos={entry.photos} alt={entry.title || entry.type} />
-          </div>
-
-          <div className="mb-3 mt-5 flex items-start justify-between gap-4">
-            <div>
-              <h3 className="mb-3 text-[1.35rem] font-normal leading-8 text-[#5f5444]">
-                {entry.title || "Untitled entry"}
-              </h3>
-
-              {entry.type === "Ride" && (entry.duration || entry.distance) ? (
-                <div className="mt-2 text-[11px] uppercase tracking-[0.26em] text-[#b3a688]">
-                  Ride
-                  {entry.duration ? ` · ${entry.duration}` : ""}
-                  {entry.distance ? ` · ${entry.distance}` : ""}
-                </div>
-              ) : null}
-
-              {entry.route ? (
-                <div className="mt-3 text-[0.95rem] text-[#8f816b]">
-                  {entry.route}
-                </div>
-              ) : null}
-
-              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-[11px] uppercase tracking-[0.22em] text-[#b3a688]">
-                {entry.date ? <span>{formatHeaderDate(entry.date)}</span> : null}
-                {entry.time ? <span>{formatTimeLabel(entry.time)}</span> : null}
-                {entry.place ? <span>{entry.place}</span> : null}
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => onEdit(entry)}
-                className="rounded-full border border-[#ddd4c4] bg-[#f8f5ee] px-4 py-2 text-[11px] uppercase tracking-[0.24em] text-[#9e8d73] transition hover:bg-[#f4efe5]"
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                onClick={() => onDelete(entry)}
-                className="rounded-full border border-[#ddd4c4] bg-[#f8f5ee] px-4 py-2 text-[11px] uppercase tracking-[0.24em] text-[#9e8d73] transition hover:bg-[#f4efe5]"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-
-          <div className="whitespace-pre-wrap text-[1rem] leading-8 text-[#8f816b]">
-            {entry.note || "No note for this entry yet."}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MonthlyStatsPanel({ stats }) {
-  if (!stats || stats.length === 0) return null;
-
-  return (
-    <section className="mb-8 rounded-[30px] border border-[#ddd4c4] bg-[#f8f5ee] p-5 shadow-[0_1px_2px_rgba(80,66,38,0.04)]">
-      <div className="mb-5 flex items-center justify-between">
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.34em] text-[#a69473]">
-            Monthly Summary
-          </p>
-          <h2 className="mt-2 text-[1.15rem] font-normal text-[#7d705c]">
-            A quiet record of the month
-          </h2>
-        </div>
-      </div>
-
-      <div className="space-y-4">
-        {stats.map((month) => (
-          <div
-            key={month.monthKey}
-            className="rounded-[24px] border border-[#e3dbcf] bg-[#fbf9f3] px-5 py-5"
-          >
-            <div className="mb-4 flex items-center justify-between gap-4">
-              <div className="text-[12px] uppercase tracking-[0.3em] text-[#8f816b]">
-                {month.monthLabel}
-              </div>
-              <div className="text-[11px] uppercase tracking-[0.24em] text-[#b3a688]">
-                {month.totalEntries} entries
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-              <div className="rounded-[18px] border border-[#ece4d8] bg-[#f8f5ee] px-4 py-3">
-                <div className="text-[10px] uppercase tracking-[0.24em] text-[#b3a688]">
-                  Ride
-                </div>
-                <div className="mt-2 text-[1rem] text-[#6f624f]">
-                  {month.rideCount}
-                </div>
-              </div>
-
-              <div className="rounded-[18px] border border-[#ece4d8] bg-[#f8f5ee] px-4 py-3">
-                <div className="text-[10px] uppercase tracking-[0.24em] text-[#b3a688]">
-                  Ride Time
-                </div>
-                <div className="mt-2 text-[1rem] text-[#6f624f]">
-                  {formatMinutesAsHours(month.rideMinutes)}
-                </div>
-              </div>
-
-              <div className="rounded-[18px] border border-[#ece4d8] bg-[#f8f5ee] px-4 py-3">
-                <div className="text-[10px] uppercase tracking-[0.24em] text-[#b3a688]">
-                  Walk
-                </div>
-                <div className="mt-2 text-[1rem] text-[#6f624f]">
-                  {month.walkCount}
-                </div>
-              </div>
-
-              <div className="rounded-[18px] border border-[#ece4d8] bg-[#f8f5ee] px-4 py-3">
-                <div className="text-[10px] uppercase tracking-[0.24em] text-[#b3a688]">
-                  Cafe
-                </div>
-                <div className="mt-2 text-[1rem] text-[#6f624f]">
-                  {month.cafeCount}
-                </div>
-              </div>
-
-              <div className="rounded-[18px] border border-[#ece4d8] bg-[#f8f5ee] px-4 py-3">
-                <div className="text-[10px] uppercase tracking-[0.24em] text-[#b3a688]">
-                  Notes
-                </div>
-                <div className="mt-2 text-[1rem] text-[#6f624f]">
-                  {month.notesCount}
-                </div>
-              </div>
-
-              <div className="rounded-[18px] border border-[#ece4d8] bg-[#f8f5ee] px-4 py-3">
-                <div className="text-[10px] uppercase tracking-[0.24em] text-[#b3a688]">
-                  Total
-                </div>
-                <div className="mt-2 text-[1rem] text-[#6f624f]">
-                  {month.totalEntries}
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-export default function App() {
-  const [entries, setEntries] = useState([]);
-  const [loadingEntries, setLoadingEntries] = useState(true);
-  const [syncError, setSyncError] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedHistoryEntry, setSelectedHistoryEntry] = useState(null);
-
-  const [editor, setEditor] = useState(emptyEditor());
-  const [activeView, setActiveView] = useState("today");
-
-  const [editingId, setEditingId] = useState(null);
-  const [originalPhotos, setOriginalPhotos] = useState([]);
-
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    const unsubscribe = subscribeToEntries(
-      (liveEntries) => {
-        setEntries(liveEntries);
-        setLoadingEntries(false);
-        setSyncError("");
-      },
-      (error) => {
-        console.error(error);
-        setSyncError("Live sync failed. Please refresh and try again.");
-        setLoadingEntries(false);
-      }
-    );
-
-    return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      editor.newPhotos.forEach((photo) => {
-        if (photo.preview?.startsWith("blob:")) {
-          URL.revokeObjectURL(photo.preview);
-        }
-      });
-    };
-  }, [editor.newPhotos]);
-
-  const normalizedEntries = useMemo(() => {
-    return [...entries].sort((a, b) => {
-      const aDate = a.date || "";
-      const bDate = b.date || "";
-      if (aDate !== bDate) return bDate.localeCompare(aDate);
-
-      const aTime = a.time || "";
-      const bTime = b.time || "";
-      if (aTime !== bTime) return bTime.localeCompare(aTime);
-
-      return (b.createdAtMs || 0) - (a.createdAtMs || 0);
-    });
-  }, [entries]);
-
-  const filteredEntries = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-
-    return normalizedEntries.filter((entry) => {
-      if (activeView === "today") {
-        if (!entry.date || entry.date.slice(0, 10) !== todayString()) {
-          return false;
-        }
-      }
-
-      if (!q) return true;
-
-      return (
-        (entry.title || "").toLowerCase().includes(q) ||
-        (entry.note || "").toLowerCase().includes(q) ||
-        (entry.place || "").toLowerCase().includes(q) ||
-        (entry.type || "").toLowerCase().includes(q) ||
-        (entry.route || "").toLowerCase().includes(q) ||
-        (entry.duration || "").toLowerCase().includes(q) ||
-        (entry.distance || "").toLowerCase().includes(q)
-      );
-    });
-  }, [normalizedEntries, activeView, searchQuery]);
-
-  const groupedHistory = useMemo(() => {
-    const monthGroups = [];
-
-    for (const entry of filteredEntries) {
-      const dateKey = entry.date || "Unknown date";
-      const monthKey =
-        dateKey === "Unknown date" ? "Unknown month" : dateKey.slice(0, 7);
-
-      let monthGroup = monthGroups.find((group) => group.monthKey === monthKey);
-
-      if (!monthGroup) {
-        monthGroup = {
-          monthKey,
-          monthLabel:
-            monthKey === "Unknown month"
-              ? "Unknown month"
-              : formatMonthYear(dateKey),
-          days: [],
-        };
-        monthGroups.push(monthGroup);
-      }
-
-      let dayGroup = monthGroup.days.find((day) => day.date === dateKey);
-
-      if (!dayGroup) {
-        dayGroup = {
-          date: dateKey,
-          entries: [],
-        };
-        monthGroup.days.push(dayGroup);
-      }
-
-      dayGroup.entries.push(entry);
-    }
-
-    return monthGroups;
-  }, [filteredEntries]);
-
-  const monthlyStats = useMemo(() => {
-    const statsMap = {};
-
-    for (const entry of normalizedEntries) {
-      const monthKey =
-        entry.date && entry.date !== "Unknown date"
-          ? entry.date.slice(0, 7)
-          : "unknown";
-
-      if (!statsMap[monthKey]) {
-        statsMap[monthKey] = {
-          monthKey,
-          monthLabel:
-            monthKey === "unknown"
-              ? "Unknown month"
-              : formatMonthYear(`${monthKey}-01`),
-          totalEntries: 0,
-          rideCount: 0,
-          walkCount: 0,
-          cafeCount: 0,
-          notesCount: 0,
-          rideMinutes: 0,
-        };
-      }
-
-      const bucket = statsMap[monthKey];
-      bucket.totalEntries += 1;
-
-      if (entry.type === "Ride") {
-        bucket.rideCount += 1;
-        bucket.rideMinutes += parseDurationToMinutes(entry.duration);
-      } else if (entry.type === "Walk") {
-        bucket.walkCount += 1;
-      } else if (entry.type === "Cafe") {
-        bucket.cafeCount += 1;
-      } else if (entry.type === "Notes") {
-        bucket.notesCount += 1;
-      }
-    }
-
-    return Object.values(statsMap).sort((a, b) =>
-      b.monthKey.localeCompare(a.monthKey)
-    );
-  }, [normalizedEntries]);
-
-  const handleField = (key, value) => {
-    setEditor((prev) => ({
-      ...prev,
-      [key]: value,
-    }));
-  };
-
-  const clearEditor = () => {
-    editor.newPhotos.forEach((photo) => {
-      if (photo.preview?.startsWith("blob:")) {
-        URL.revokeObjectURL(photo.preview);
-      }
-    });
-
-    setEditor(emptyEditor());
-    setEditingId(null);
-    setOriginalPhotos([]);
-  };
-
-  const handlePhotoChange = (event) => {
-    const files = Array.from(event.target.files || []);
-    if (!files.length) return;
-
-    const usedSlots = editor.existingPhotos.length + editor.newPhotos.length;
-    const availableSlots = Math.max(0, MAX_IMAGES - usedSlots);
-    const acceptedFiles = files.slice(0, availableSlots);
-
-    const nextNewPhotos = acceptedFiles.map((file) => ({
-      file,
-      preview: URL.createObjectURL(file),
-    }));
-
-    setEditor((prev) => ({
-      ...prev,
-      newPhotos: [...prev.newPhotos, ...nextNewPhotos],
-    }));
-
-    event.target.value = "";
-  };
-
-  const removeExistingPhoto = (indexToRemove) => {
-    setEditor((prev) => ({
-      ...prev,
-      existingPhotos: prev.existingPhotos.filter(
-        (_, index) => index !== indexToRemove
-      ),
-    }));
-  };
-
-  const removeNewPhoto = (indexToRemove) => {
-    setEditor((prev) => {
-      const target = prev.newPhotos[indexToRemove];
-      if (target?.preview?.startsWith("blob:")) {
-        URL.revokeObjectURL(target.preview);
-      }
-
-      return {
-        ...prev,
-        newPhotos: prev.newPhotos.filter((_, index) => index !== indexToRemove),
-      };
-    });
-  };
-
-  const startEdit = (entry) => {
-    editor.newPhotos.forEach((photo) => {
-      if (photo.preview?.startsWith("blob:")) {
-        URL.revokeObjectURL(photo.preview);
-      }
-    });
-
-    setSelectedHistoryEntry(null);
-    setEditingId(entry.id);
-    setOriginalPhotos(entry.photos || []);
-
-    setEditor({
-      type: entry.type || "Ride",
-      title: entry.title || "",
-      note: entry.note || "",
-      date: entry.date || todayString(),
-      time: entry.time || currentTimeString(),
-      place: entry.place || "",
-      duration: entry.duration || "",
-      distance: entry.distance || "",
-      route: entry.route || "",
-      existingPhotos: entry.photos || [],
-      newPhotos: [],
-    });
-
-    setActiveView("today");
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  const handleDelete = async (entry) => {
-    const confirmed = window.confirm("Delete this entry?");
-    if (!confirmed) return;
-
-    try {
-      await deleteEntry(entry.id);
-
-      const allPaths = (entry.photos || [])
-        .map((photo) => photo.path)
-        .filter(Boolean);
-      if (allPaths.length) {
-        await deletePhotosByPaths(allPaths);
-      }
-
-      if (editingId === entry.id) {
-        clearEditor();
-      }
-
-      if (selectedHistoryEntry?.id === entry.id) {
-        setSelectedHistoryEntry(null);
-      }
-    } catch (error) {
-      console.error("Delete entry failed:", error);
-      alert("Sorry — deleting this entry failed.");
-    }
-  };
-
-  const handleSubmit = async (event) => {
-    event.preventDefault();
-
-    const cleanTitle = editor.title.trim();
-    const cleanNote = editor.note.trim();
-    const cleanPlace = editor.place.trim();
-    const cleanDuration = editor.duration.trim();
-    const cleanDistance = editor.distance.trim();
-    const cleanRoute = editor.route.trim();
-
-    if (!cleanTitle && !cleanNote && !cleanPlace) {
-      alert("Add at least a title, note, or place.");
-      return;
-    }
-
-    setSaving(true);
-
-    try {
-      const uploadedPhotos = editor.newPhotos.length
-        ? await uploadEntryPhotos(editor.newPhotos.map((photo) => photo.file))
-        : [];
-
-      const finalPhotos = [...editor.existingPhotos, ...uploadedPhotos].slice(
-        0,
-        MAX_IMAGES
-      );
-
-      const payload = {
-        type: editor.type,
-        title: cleanTitle,
-        note: cleanNote,
-        date: editor.date,
-        time: editor.time,
-        place: cleanPlace,
-        duration: cleanDuration,
-        distance: cleanDistance,
-        route: cleanRoute,
-        photos: finalPhotos,
-      };
-
-      if (editingId) {
-        const removedPaths = originalPhotos
-          .filter(
-            (originalPhoto) =>
-              !editor.existingPhotos.some(
-                (existingPhoto) => existingPhoto.path === originalPhoto.path
-              )
-          )
-          .map((photo) => photo.path)
-          .filter(Boolean);
-
-        await updateEntry(editingId, payload);
-
-        if (removedPaths.length) {
-          await deletePhotosByPaths(removedPaths);
-        }
-      } else {
-        await addEntry(payload);
-      }
-
-      clearEditor();
-    } catch (error) {
-      console.error("Saving entry failed:", error);
-      alert("Sorry — saving failed. Please try again.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const editorPreviewCount =
-    editor.existingPhotos.length + editor.newPhotos.length;
-
-  return (
-    <div className="min-h-screen bg-leica text-[#4e4435]">
-      <div className="mx-auto max-w-[1280px] px-3 pb-12 pt-3 sm:px-5 lg:px-6">
-        <header className="mb-6 rounded-[30px] border border-[#ddd4c4] bg-[#f8f5ee] px-7 py-7 shadow-[0_1px_2px_rgba(80,66,38,0.04)]">
-          <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
-            <div>
-              <h1 className="text-[2.05rem] font-medium text-[#8f816b]">
-                Daily Frame.
-              </h1>
-              <div className="mb-5 text-[11px] uppercase tracking-[0.36em] text-[#a69473]">
-                Ride | Time | Place
-              </div>
-              <p className="text-[1.08rem] italic leading-8 text-[#8f816b]">
-                Ride the day. Keep the moment.
-              </p>
-            </div>
-
-            <div className="flex gap-2 self-start">
-              <button
-                type="button"
-                onClick={() => setActiveView("today")}
-                className={classNames(
-                  "rounded-full border px-6 py-3 text-[12px] uppercase tracking-[0.28em] transition",
-                  activeView === "today"
-                    ? "border-[#cfc2aa] bg-[#eee5d2] text-[#8c7b5f]"
-                    : "border-[#ddd4c4] bg-[#f8f5ee] text-[#b19f84] hover:bg-[#f4efe5]"
-                )}
-              >
-                Today
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveView("history")}
-                className={classNames(
-                  "rounded-full border px-6 py-3 text-[12px] uppercase tracking-[0.28em] transition",
-                  activeView === "history"
-                    ? "border-[#cfc2aa] bg-[#eee5d2] text-[#8c7b5f]"
-                    : "border-[#ddd4c4] bg-[#f8f5ee] text-[#b19f84] hover:bg-[#f4efe5]"
-                )}
-              >
-                History
-              </button>
-            </div>
-          </div>
-        </header>
-
-        <section className="mb-6 rounded-[30px] border border-[#ddd4c4] bg-[#f8f5ee] p-5 shadow-[0_1px_2px_rgba(80,66,38,0.04)]">
-          <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="hide-scrollbar flex gap-2 overflow-x-auto pb-1">
-              {TYPES.map(({ name, icon: Icon }) => (
-                <button
-                  key={name}
-                  type="button"
-                  onClick={() => handleField("type", name)}
-                  className={classNames(
-                    "inline-flex shrink-0 items-center gap-2 rounded-full border px-5 py-3 text-[12px] uppercase tracking-[0.28em] transition",
-                    editor.type === name
-                      ? "border-[#cfc2aa] bg-[#eee5d2] text-[#8c7b5f]"
-                      : "border-[#ddd4c4] bg-[#f8f5ee] text-[#9e8d73] hover:bg-[#f4efe5]"
-                  )}
-                >
-                  <Icon size={14} strokeWidth={1.8} />
-                  {name}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <div className="rounded-full border border-[#ddd4c4] bg-[#f8f5ee] px-6 py-3 text-[12px] uppercase tracking-[0.28em] text-[#a59376]">
-                {activeView === "today"
-                  ? formatHeaderDate(todayString())
-                  : "All dates"}
-              </div>
-
-              <label className="flex min-w-[250px] items-center gap-3 rounded-full border border-[#ddd4c4] bg-[#f8f5ee] px-5 py-3 text-[#a59376]">
-                <Search size={16} strokeWidth={1.8} />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search entries"
-                  className="w-full bg-transparent text-[15px] text-[#7f725f] outline-none placeholder:text-[#b7a88f]"
-                />
-              </label>
-            </div>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div className="grid gap-5 lg:grid-cols-[1.1fr_1fr]">
-              <div>
-                <label className="mb-2 block text-[11px] uppercase tracking-[0.34em] text-[#9f8d73]">
-                  Title
-                </label>
-                <input
-                  type="text"
-                  value={editor.title}
-                  onChange={(e) => handleField("title", e.target.value)}
-                  placeholder="Add a title"
-                  className="w-full rounded-[24px] border border-[#ddd4c4] bg-[#fbf9f3] px-6 py-4 text-[1rem] text-[#675b49] outline-none transition placeholder:text-[#b3a691] focus:border-[#cfc2aa]"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-[11px] uppercase tracking-[0.34em] text-[#9f8d73]">
-                  Place
-                </label>
-                <input
-                  type="text"
-                  value={editor.place}
-                  onChange={(e) => handleField("place", e.target.value)}
-                  placeholder="Where was this?"
-                  className="w-full rounded-[24px] border border-[#ddd4c4] bg-[#fbf9f3] px-6 py-4 text-[1rem] text-[#675b49] outline-none transition placeholder:text-[#b3a691] focus:border-[#cfc2aa]"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-[11px] uppercase tracking-[0.34em] text-[#9f8d73]">
-                Note
-              </label>
-              <textarea
-                value={editor.note}
-                onChange={(e) => handleField("note", e.target.value)}
-                placeholder="Add a short note"
-                rows={5}
-                className="w-full rounded-[24px] border border-[#ddd4c4] bg-[#fbf9f3] px-6 py-5 text-[1rem] leading-8 text-[#675b49] outline-none transition placeholder:text-[#b3a691] focus:border-[#cfc2aa]"
-              />
-            </div>
-
-            <div className="grid gap-5 md:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-[11px] uppercase tracking-[0.34em] text-[#9f8d73]">
-                  Date
-                </label>
-                <input
-                  type="date"
-                  value={editor.date}
-                  onChange={(e) => handleField("date", e.target.value)}
-                  className="w-full rounded-[24px] border border-[#ddd4c4] bg-[#fbf9f3] px-6 py-4 text-[1rem] text-[#675b49] outline-none transition focus:border-[#cfc2aa]"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-[11px] uppercase tracking-[0.34em] text-[#9f8d73]">
-                  Time
-                </label>
-                <input
-                  type="time"
-                  value={editor.time}
-                  onChange={(e) => handleField("time", e.target.value)}
-                  className="w-full rounded-[24px] border border-[#ddd4c4] bg-[#fbf9f3] px-6 py-4 text-[1rem] text-[#675b49] outline-none transition focus:border-[#cfc2aa]"
-                />
-              </div>
-            </div>
-
-            {editor.type === "Ride" ? (
-              <div className="grid gap-5 md:grid-cols-2">
-                <div>
-                  <label className="mb-2 block text-[11px] uppercase tracking-[0.34em] text-[#9f8d73]">
-                    Duration
-                  </label>
-                  <input
-                    type="text"
-                    value={editor.duration}
-                    onChange={(e) => handleField("duration", e.target.value)}
-                    placeholder="1h 45m"
-                    className="w-full rounded-[24px] border border-[#ddd4c4] bg-[#fbf9f3] px-6 py-4 text-[1rem] text-[#675b49] outline-none transition placeholder:text-[#b3a691] focus:border-[#cfc2aa]"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-[11px] uppercase tracking-[0.34em] text-[#9f8d73]">
-                    Distance (optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={editor.distance}
-                    onChange={(e) => handleField("distance", e.target.value)}
-                    placeholder="32 km"
-                    className="w-full rounded-[24px] border border-[#ddd4c4] bg-[#fbf9f3] px-6 py-4 text-[1rem] text-[#675b49] outline-none transition placeholder:text-[#b3a691] focus:border-[#cfc2aa]"
-                  />
-                </div>
-
-                <div className="md:col-span-2">
-                  <label className="mb-2 block text-[11px] uppercase tracking-[0.34em] text-[#9f8d73]">
-                    Route
-                  </label>
-                  <input
-                    type="text"
-                    value={editor.route}
-                    onChange={(e) => handleField("route", e.target.value)}
-                    placeholder="Forest Hill → Brick Works"
-                    className="w-full rounded-[24px] border border-[#ddd4c4] bg-[#fbf9f3] px-6 py-4 text-[1rem] text-[#675b49] outline-none transition placeholder:text-[#b3a691] focus:border-[#cfc2aa]"
-                  />
-                </div>
-              </div>
-            ) : null}
-
-            <div>
-              <label className="mb-2 block text-[11px] uppercase tracking-[0.34em] text-[#9f8d73]">
-                Photos ({editorPreviewCount}/{MAX_IMAGES})
-              </label>
-
-              <div className="space-y-4">
-                {editor.existingPhotos.length > 0 || editor.newPhotos.length > 0 ? (
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                    {editor.existingPhotos.map((photo, index) => (
-                      <div
-                        key={`existing-${photo.url}-${index}`}
-                        className="relative overflow-hidden rounded-[20px] border border-[#ddd4c4] bg-[#fbf9f3]"
-                      >
-                        <div className="aspect-square overflow-hidden">
-                          <img
-                            src={photo.url}
-                            alt=""
-                            className="h-full w-full object-cover"
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => removeExistingPhoto(index)}
-                          className="absolute right-2 top-2 rounded-full bg-[#f8f5ee]/95 p-1.5 text-[#8f816b] shadow-sm"
-                        >
-                          <X size={14} />
-                        </button>
-                      </div>
-                    ))}
-
-                    {editor.newPhotos.map((photo, index) => (
-                      <div
-                        key={`new-${photo.preview}-${index}`}
-                        className="relative overflow-hidden rounded-[20px] border border-[#ddd4c4] bg-[#fbf9f3]"
-                      >
-                        <div className="aspect-square overflow-hidden">
-                          <img
-                            src={photo.preview}
-                            alt=""
-                            className="h-full w-full object-cover"
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => removeNewPhoto(index)}
-                          className="absolute right-2 top-2 rounded-full bg-[#f8f5ee]/95 p-1.5 text-[#8f816b] shadow-sm"
-                        >
-                          <X size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-
-                {editorPreviewCount < MAX_IMAGES ? (
-                  <label className="flex cursor-pointer items-center justify-center gap-3 rounded-[28px] border border-dashed border-[#d8cfbf] bg-[#fbf9f3] px-6 py-10 text-[15px] text-[#8d7d64] transition hover:bg-[#f6f1e8]">
-                    <Camera size={18} strokeWidth={1.8} />
-                    Add photos
-                    <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      onChange={handlePhotoChange}
-                      className="hidden"
-                    />
-                  </label>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-3 pt-1">
-              <button
-                type="submit"
-                disabled={saving}
-                className="inline-flex items-center gap-2 rounded-full border border-[#cfc2aa] bg-[#eee5d2] px-6 py-3 text-[12px] uppercase tracking-[0.28em] text-[#8c7b5f] transition hover:bg-[#e7dcc4] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {saving ? (
-                  <>
-                    <LoaderCircle size={15} className="animate-spin" />
-                    Saving
-                  </>
-                ) : editingId ? (
-                  "Update Entry"
-                ) : (
-                  "Add Entry"
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={clearEditor}
-                disabled={saving}
-                className="inline-flex items-center gap-2 rounded-full border border-[#ddd4c4] bg-[#f8f5ee] px-6 py-3 text-[12px] uppercase tracking-[0.28em] text-[#a08f74] transition hover:bg-[#f4efe5] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Clear
-              </button>
-            </div>
-          </form>
-        </section>
-
-        {activeView === "history" && !loadingEntries ? (
-          <MonthlyStatsPanel stats={monthlyStats} />
-        ) : null}
-
-        {loadingEntries ? (
-          <div className="rounded-[28px] border border-[#ddd4c4] bg-[#f8f5ee] px-6 py-8 text-[15px] text-[#8f816b]">
-            <div className="flex items-center gap-3">
-              <LoaderCircle size={18} className="animate-spin" />
-              Syncing Daily Frame...
-            </div>
-          </div>
-        ) : filteredEntries.length === 0 ? (
-          <div className="rounded-[28px] border border-[#ddd4c4] bg-[#f8f5ee] px-6 py-10 text-center text-[15px] text-[#9c8d75]">
-            {activeView === "history"
-              ? "No history entries yet."
-              : "No entries yet for today."}
-          </div>
-        ) : activeView === "today" ? (
-          <>
-            <div className="mb-4 text-[12px] uppercase tracking-[0.32em] text-[#85765f]">
-              {formatHeaderDate(todayString())}
-            </div>
-
-            <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-              {filteredEntries.map((entry) => (
-                <EntryCard
-                  key={entry.id}
-                  entry={entry}
-                  onEdit={startEdit}
-                  onDelete={handleDelete}
-                />
-              ))}
-            </section>
-          </>
-        ) : (
-          <div className="space-y-10">
-            {groupedHistory.map((monthGroup) => (
-              <section key={monthGroup.monthKey}>
-                <div className="mb-6 mt-2 flex items-center gap-4">
-                  <div className="h-px flex-1 bg-[#e6dfd4]" />
-                  <div className="text-[12px] uppercase tracking-[0.32em] text-[#8f816b]">
-                    {monthGroup.monthLabel}
-                  </div>
-                  <div className="h-px flex-1 bg-[#e6dfd4]" />
-                </div>
-
-                <div className="space-y-8">
-                  {monthGroup.days.map((dayGroup) => (
-                    <section key={dayGroup.date}>
-                      <div className="mb-4 text-[12px] uppercase tracking-[0.32em] text-[#85765f]">
-                        {dayGroup.date === "Unknown date"
-                          ? "Unknown date"
-                          : formatHeaderDate(dayGroup.date)}
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                        {dayGroup.entries.map((entry) => (
-                          <HistoryTile
-                            key={entry.id}
-                            entry={entry}
-                            onOpen={setSelectedHistoryEntry}
-                          />
-                        ))}
-                      </div>
-                    </section>
-                  ))}
-                </div>
-              </section>
-            ))}
-          </div>
-        )}
-
-        {syncError ? (
-          <div className="mt-5 rounded-[24px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {syncError}
-          </div>
-        ) : null}
-      </div>
-
-      <EntryModal
-        entry={selectedHistoryEntry}
-        onClose={() => setSelectedHistoryEntry(null)}
-        onEdit={startEdit}
-        onDelete={handleDelete}
-      />
+    <div className="rounded-[28px] border border-[#ddd5c8] bg-[#fbf8f4] px-5 py-10 text-center shadow-[0_10px_24px_rgba(60,50,40,0.04)]">
+      <div className="text-[11px] uppercase tracking-[0.22em] text-[#8f816b]">Daily Frame</div>
+      <h3 className="mt-2 text-[22px] font-medium tracking-[-0.03em] text-[#3a342d]">{title}</h3>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#655d53]">{text}</p>
     </div>
   );
 }
