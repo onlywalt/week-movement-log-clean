@@ -52,10 +52,9 @@ const COLLECTION_CANDIDATES = [
   "entries",
   "daily-frame-entries",
   "week-movement-log",
-  "dailyFrameEntries",
-];
-
-const PRIMARY_COLLECTION = COLLECTION_CANDIDATES[0];
+  "dailyFrameEntries",const COLLECTION_CANDIDATES = ["daily-frame"];
+  
+const PRIMARY_COLLECTION = "daily-frame";
 
 const EMPTY_FORM = {
   type: "Ride",
