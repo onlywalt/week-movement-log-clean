@@ -4,491 +4,612 @@ import {
   Footprints,
   Coffee,
   BookOpen,
+  Camera,
   CalendarDays,
   Clock3,
   MapPin,
-  Camera,
   Image as ImageIcon,
   Pencil,
   Trash2,
   X,
+  BarChart3,
+  Loader2,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  updateDoc,
+} from "firebase/firestore";
+import {
+  deleteObject,
+  getDownloadURL,
+  ref,
+  uploadBytes,
+} from "firebase/storage";
+import { db, storage } from "./firebase";
 
-const STORAGE_KEY = "daily-frame-journal-v1";
-
-const ACTIVITY_TYPES = [
-  {
-    key: "Ride",
-    label: "Ride",
-    icon: Bike,
-    needsDuration: true,
-    titlePlaceholder: "Ride title",
-    notePlaceholder: "Route, effort, weather, a detail worth keeping...",
-  },
-  {
-    key: "Walk",
-    label: "Walk",
-    icon: Footprints,
-    needsDuration: true,
-    titlePlaceholder: "Walk title",
-    notePlaceholder: "Where it led, what you noticed, pace, mood...",
-  },
-  {
-    key: "Cafe",
-    label: "Cafe",
-    icon: Coffee,
-    needsDuration: false,
-    titlePlaceholder: "Cafe title",
-    notePlaceholder: "Coffee, pastry, service, atmosphere...",
-  },
-  {
-    key: "Journal",
-    label: "Journal",
-    icon: BookOpen,
-    needsDuration: false,
-    titlePlaceholder: "Journal title",
-    notePlaceholder: "A note from the day...",
-  },
+const ENTRY_TYPES = [
+  { label: "Ride", icon: Bike },
+  { label: "Walk", icon: Footprints },
+  { label: "Cafe", icon: Coffee },
+  { label: "Journal", icon: BookOpen },
 ];
 
-const emptyEntry = (type = "Ride") => ({
-  id: "",
-  type,
+const MOVEMENT_TYPES = ["Ride", "Walk"];
+
+const EMPTY_FORM = {
+  type: "Ride",
   title: "",
   note: "",
-  date: todayDate(),
-  time: nowTime(),
+  date: getTodayLocalDate(),
+  time: getNowLocalTime(),
   place: "",
   duration: "",
-  rating: "",
-  images: [],
-  createdAt: new Date().toISOString(),
-});
+  cafeRating: "",
+};
 
-function todayDate() {
+function getTodayLocalDate() {
   const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  const offset = d.getTimezoneOffset();
+  const local = new Date(d.getTime() - offset * 60000);
+  return local.toISOString().slice(0, 10);
 }
 
-function nowTime() {
+function getNowLocalTime() {
   const d = new Date();
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const hh = `${d.getHours()}`.padStart(2, "0");
+  const mm = `${d.getMinutes()}`.padStart(2, "0");
+  return `${hh}:${mm}`;
 }
 
-function formatDisplayDate(dateStr) {
+function formatFullDate(dateStr) {
   if (!dateStr) return "";
-  const d = new Date(`${dateStr}T12:00:00`);
-  return d.toLocaleDateString(undefined, {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  return dt.toLocaleDateString(undefined, {
     weekday: "short",
-    month: "long",
+    month: "short",
     day: "numeric",
     year: "numeric",
   });
 }
 
 function formatMonthYear(dateStr) {
-  const d = new Date(`${dateStr}T12:00:00`);
-  return d.toLocaleDateString(undefined, {
+  if (!dateStr) return "";
+  const [y, m] = dateStr.split("-").map(Number);
+  const dt = new Date(y, m - 1, 1);
+  return dt.toLocaleDateString(undefined, {
     month: "long",
     year: "numeric",
   });
 }
 
-function monthKeyFromDate(dateStr) {
-  return dateStr?.slice(0, 7) || todayDate().slice(0, 7);
+function formatMonthKey(dateStr) {
+  return dateStr?.slice(0, 7) || "";
 }
 
-function monthLabel(monthKey) {
-  const [year, month] = monthKey.split("-");
-  const d = new Date(Number(year), Number(month) - 1, 1);
-  return d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
-}
-
-function sortEntries(entries) {
-  return [...entries].sort((a, b) => {
-    const aStamp = `${a.date || ""} ${a.time || ""}`;
-    const bStamp = `${b.date || ""} ${b.time || ""}`;
-    return bStamp.localeCompare(aStamp);
+function formatMonthLabel(monthKey) {
+  if (!monthKey) return "";
+  const [y, m] = monthKey.split("-").map(Number);
+  const dt = new Date(y, m - 1, 1);
+  return dt.toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
   });
 }
 
-function readFilesAsDataUrls(files) {
-  return Promise.all(
-    Array.from(files).map(
-      (file) =>
-        new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve({ id: crypto.randomUUID(), name: file.name, url: reader.result });
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        })
-    )
-  );
+function entryDateTimeValue(item) {
+  return `${item.date || ""}T${item.time || "00:00"}`;
 }
 
-function cls(...items) {
-  return items.filter(Boolean).join(" ");
+function sortEntriesNewest(entries) {
+  return [...entries].sort((a, b) => {
+    const av = entryDateTimeValue(a);
+    const bv = entryDateTimeValue(b);
+    return bv.localeCompare(av);
+  });
+}
+
+function typeIcon(type) {
+  switch (type) {
+    case "Ride":
+      return Bike;
+    case "Walk":
+      return Footprints;
+    case "Cafe":
+      return Coffee;
+    case "Journal":
+      return BookOpen;
+    default:
+      return Camera;
+  }
+}
+
+function classNames(...arr) {
+  return arr.filter(Boolean).join(" ");
+}
+
+function buildMonthStats(entries) {
+  const stats = {
+    total: entries.length,
+    Ride: 0,
+    Walk: 0,
+    Cafe: 0,
+    Journal: 0,
+    minutes: 0,
+    photos: 0,
+  };
+
+  entries.forEach((item) => {
+    if (stats[item.type] !== undefined) stats[item.type] += 1;
+    const mins = Number(item.duration || 0);
+    if (!Number.isNaN(mins)) stats.minutes += mins;
+    stats.photos += Array.isArray(item.images) ? item.images.length : 0;
+  });
+
+  return stats;
+}
+
+function getMonthRange(monthOffset = 0) {
+  const now = new Date();
+  const dt = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
+  return `${dt.getFullYear()}-${`${dt.getMonth() + 1}`.padStart(2, "0")}`;
 }
 
 export default function App() {
   const [entries, setEntries] = useState([]);
-  const [activeView, setActiveView] = useState("Journal");
-  const [selectedType, setSelectedType] = useState("Ride");
-  const [form, setForm] = useState(emptyEntry("Ride"));
-  const [editingId, setEditingId] = useState("");
-  const [selectedMonth, setSelectedMonth] = useState(todayDate().slice(0, 7));
-  const [lightboxImage, setLightboxImage] = useState("");
+  const [loadingEntries, setLoadingEntries] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [selectedTab, setSelectedTab] = useState("Journal");
+  const [editingId, setEditingId] = useState(null);
+  const [pickedFiles, setPickedFiles] = useState([]);
+  const [pickedPreviews, setPickedPreviews] = useState([]);
+  const [lightboxImages, setLightboxImages] = useState([]);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
+  const [selectedMonth, setSelectedMonth] = useState(getMonthRange(0));
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          const sorted = sortEntries(parsed);
-          setEntries(sorted);
-          if (sorted[0]?.date) setSelectedMonth(monthKeyFromDate(sorted[0].date));
-        }
+    const q = query(collection(db, "daily-frame-entries"), orderBy("date", "desc"));
+
+    const unsub = onSnapshot(
+      q,
+      (snapshot) => {
+        const rows = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }));
+        setEntries(sortEntriesNewest(rows));
+        setLoadingEntries(false);
+      },
+      (error) => {
+        console.error("Firestore read error:", error);
+        setLoadingEntries(false);
       }
-    } catch (error) {
-      console.error("Failed to read entries", error);
-    }
+    );
+
+    return () => unsub();
   }, []);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
-    } catch (error) {
-      console.error("Failed to save entries", error);
-    }
-  }, [entries]);
-
-  useEffect(() => {
-    setForm((prev) => ({
-      ...prev,
-      type: selectedType,
-      duration: ACTIVITY_TYPES.find((item) => item.key === selectedType)?.needsDuration ? prev.duration : "",
-      rating: selectedType === "Cafe" ? prev.rating : "",
-    }));
-  }, [selectedType]);
-
-  const activityMeta = useMemo(
-    () => ACTIVITY_TYPES.find((item) => item.key === selectedType) || ACTIVITY_TYPES[0],
-    [selectedType]
-  );
-
-  const groupedJournal = useMemo(() => {
-    const sorted = sortEntries(entries);
-    return sorted.reduce((acc, entry) => {
-      if (!acc[entry.date]) acc[entry.date] = [];
-      acc[entry.date].push(entry);
-      return acc;
-    }, {});
-  }, [entries]);
-
-  const monthsWithEntries = useMemo(() => {
-    const unique = [...new Set(entries.map((item) => monthKeyFromDate(item.date)))];
-    return unique.sort((a, b) => b.localeCompare(a));
-  }, [entries]);
-
-  useEffect(() => {
-    if (!monthsWithEntries.length) return;
-    if (!monthsWithEntries.includes(selectedMonth)) {
-      setSelectedMonth(monthsWithEntries[0]);
-    }
-  }, [monthsWithEntries, selectedMonth]);
-
-  const summaryEntries = useMemo(
-    () => entries.filter((item) => monthKeyFromDate(item.date) === selectedMonth),
-    [entries, selectedMonth]
-  );
-
-  const summaryStats = useMemo(() => {
-    const stats = {
-      total: summaryEntries.length,
-      Ride: 0,
-      Walk: 0,
-      Cafe: 0,
-      Journal: 0,
-      rideMinutes: 0,
-      walkMinutes: 0,
-      cafeRated: 0,
-      images: 0,
+    return () => {
+      pickedPreviews.forEach((url) => URL.revokeObjectURL(url));
     };
+  }, [pickedPreviews]);
 
-    summaryEntries.forEach((item) => {
-      if (stats[item.type] !== undefined) stats[item.type] += 1;
-      if (item.type === "Ride") stats.rideMinutes += Number(item.duration || 0);
-      if (item.type === "Walk") stats.walkMinutes += Number(item.duration || 0);
-      if (item.type === "Cafe" && item.rating) stats.cafeRated += 1;
-      stats.images += Array.isArray(item.images) ? item.images.length : 0;
+  const groupedEntries = useMemo(() => {
+    const groups = [];
+    let lastMonth = "";
+
+    entries.forEach((item) => {
+      const monthKey = formatMonthKey(item.date);
+      if (monthKey !== lastMonth) {
+        groups.push({ type: "month", key: monthKey, label: formatMonthLabel(monthKey) });
+        lastMonth = monthKey;
+      }
+      groups.push({ type: "entry", key: item.id, item });
     });
 
-    return stats;
-  }, [summaryEntries]);
+    return groups;
+  }, [entries]);
 
-  const summaryGroups = useMemo(() => {
-    return summaryEntries.reduce((acc, item) => {
-      const label = formatDisplayDate(item.date);
-      if (!acc[label]) acc[label] = [];
-      acc[label].push(item);
-      return acc;
-    }, {});
-  }, [summaryEntries]);
+  const monthEntries = useMemo(() => {
+    return entries.filter((item) => formatMonthKey(item.date) === selectedMonth);
+  }, [entries, selectedMonth]);
 
-  const handleTypeSelect = (type) => {
-    setSelectedType(type);
-    if (!editingId) {
-      setForm((prev) => ({
-        ...emptyEntry(type),
-        date: prev.date || todayDate(),
-        time: prev.time || nowTime(),
-        images: prev.images || [],
-      }));
-    }
-  };
+  const monthStats = useMemo(() => buildMonthStats(monthEntries), [monthEntries]);
 
-  const handleFormChange = (key, value) => {
+  const availableMonths = useMemo(() => {
+    const map = new Map();
+    entries.forEach((item) => {
+      const key = formatMonthKey(item.date);
+      if (key && !map.has(key)) map.set(key, formatMonthLabel(key));
+    });
+    const arr = [...map.entries()].map(([key, label]) => ({ key, label }));
+    return arr.sort((a, b) => b.key.localeCompare(a.key));
+  }, [entries]);
+
+  useEffect(() => {
+    if (!availableMonths.length) return;
+    const exists = availableMonths.some((m) => m.key === selectedMonth);
+    if (!exists) setSelectedMonth(availableMonths[0].key);
+  }, [availableMonths, selectedMonth]);
+
+  function updateForm(key, value) {
     setForm((prev) => ({ ...prev, [key]: value }));
-  };
+  }
 
-  const clearForm = () => {
-    setEditingId("");
-    setSelectedType("Ride");
-    setForm(emptyEntry("Ride"));
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
+  function setType(type) {
+    setForm((prev) => ({ ...prev, type }));
+  }
 
-  const handleImages = async (event) => {
-    const files = event.target.files;
-    if (!files?.length) return;
-    try {
-      const newImages = await readFilesAsDataUrls(files);
-      setForm((prev) => ({
-        ...prev,
-        images: [...(prev.images || []), ...newImages],
-      }));
-    } catch (error) {
-      console.error("Image load failed", error);
-    }
-  };
-
-  const removeImage = (imageId) => {
-    setForm((prev) => ({
-      ...prev,
-      images: (prev.images || []).filter((img) => img.id !== imageId),
-    }));
-  };
-
-  const handleSubmit = () => {
-    const next = {
-      ...form,
-      id: editingId || crypto.randomUUID(),
-      type: selectedType,
-      createdAt: form.createdAt || new Date().toISOString(),
-    };
-
-    if (!next.title.trim() && !next.note.trim() && !next.place.trim()) return;
-
-    setEntries((prev) => {
-      const updated = editingId
-        ? prev.map((item) => (item.id === editingId ? next : item))
-        : [next, ...prev];
-      return sortEntries(updated);
-    });
-
-    setSelectedMonth(monthKeyFromDate(next.date));
-    clearForm();
-  };
-
-  const handleEdit = (entry) => {
-    setEditingId(entry.id);
-    setSelectedType(entry.type);
-    setActiveView("Journal");
+  function clearForm() {
     setForm({
-      ...entry,
-      images: Array.isArray(entry.images) ? entry.images : [],
+      ...EMPTY_FORM,
+      type: form.type,
+      date: getTodayLocalDate(),
+      time: getNowLocalTime(),
     });
+    setEditingId(null);
+    clearPickedImages();
+  }
+
+  function clearPickedImages() {
+    pickedPreviews.forEach((url) => URL.revokeObjectURL(url));
+    setPickedFiles([]);
+    setPickedPreviews([]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function handleFilesChange(e) {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+
+    const safeImages = files.filter((file) => file.type.startsWith("image/"));
+    const previews = safeImages.map((file) => URL.createObjectURL(file));
+
+    setPickedFiles((prev) => [...prev, ...safeImages]);
+    setPickedPreviews((prev) => [...prev, ...previews]);
+  }
+
+  async function uploadImages(files) {
+    if (!files.length) return [];
+    setUploading(true);
+
+    try {
+      const uploaded = [];
+
+      for (const file of files) {
+        const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name}`;
+        const imageRef = ref(storage, `daily-frame/${fileName}`);
+        await uploadBytes(imageRef, file);
+        const downloadURL = await getDownloadURL(imageRef);
+        uploaded.push({
+          url: downloadURL,
+          path: imageRef.fullPath,
+          name: file.name,
+        });
+      }
+
+      return uploaded;
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+
+    if (!form.title.trim() && !form.note.trim() && !form.place.trim()) return;
+
+    setSaving(true);
+
+    try {
+      const newUploads = await uploadImages(pickedFiles);
+      const payload = {
+        type: form.type,
+        title: form.title.trim(),
+        note: form.note.trim(),
+        date: form.date,
+        time: form.time,
+        place: form.place.trim(),
+        duration: MOVEMENT_TYPES.includes(form.type) ? form.duration.trim() : "",
+        cafeRating: form.type === "Cafe" ? form.cafeRating.trim() : "",
+        updatedAt: serverTimestamp(),
+      };
+
+      if (editingId) {
+        const original = entries.find((item) => item.id === editingId);
+        const previousImages = Array.isArray(original?.images) ? original.images : [];
+        await updateDoc(doc(db, "daily-frame-entries", editingId), {
+          ...payload,
+          images: [...previousImages, ...newUploads],
+        });
+      } else {
+        await addDoc(collection(db, "daily-frame-entries"), {
+          ...payload,
+          images: newUploads,
+          createdAt: serverTimestamp(),
+        });
+      }
+
+      clearForm();
+      setSelectedTab("Journal");
+    } catch (error) {
+      console.error("Save error:", error);
+      alert("Could not save entry. Check Firebase settings and try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleEdit(item) {
+    setEditingId(item.id);
+    setForm({
+      type: item.type || "Ride",
+      title: item.title || "",
+      note: item.note || "",
+      date: item.date || getTodayLocalDate(),
+      time: item.time || getNowLocalTime(),
+      place: item.place || "",
+      duration: item.duration || "",
+      cafeRating: item.cafeRating || "",
+    });
+    clearPickedImages();
     window.scrollTo({ top: 0, behavior: "smooth" });
-  };
+  }
 
-  const handleDelete = (id) => {
-    setEntries((prev) => prev.filter((item) => item.id !== id));
-    if (editingId === id) clearForm();
-  };
+  async function handleDelete(item) {
+    const ok = window.confirm("Delete this entry?");
+    if (!ok) return;
 
-  const goMonth = (direction) => {
-    const [year, month] = selectedMonth.split("-").map(Number);
-    const d = new Date(year, month - 1 + direction, 1);
-    const nextMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    setSelectedMonth(nextMonth);
-  };
+    try {
+      if (Array.isArray(item.images)) {
+        for (const image of item.images) {
+          if (image?.path) {
+            try {
+              await deleteObject(ref(storage, image.path));
+            } catch (err) {
+              console.warn("Image delete skipped:", err);
+            }
+          }
+        }
+      }
+
+      await deleteDoc(doc(db, "daily-frame-entries", item.id));
+    } catch (error) {
+      console.error("Delete error:", error);
+      alert("Could not delete entry.");
+    }
+  }
+
+  function openLightbox(images, index = 0) {
+    if (!images?.length) return;
+    setLightboxImages(images);
+    setLightboxIndex(index);
+  }
+
+  function closeLightbox() {
+    setLightboxImages([]);
+    setLightboxIndex(0);
+  }
+
+  function nextLightbox() {
+    setLightboxIndex((prev) => (prev + 1) % lightboxImages.length);
+  }
+
+  function prevLightbox() {
+    setLightboxIndex((prev) => (prev - 1 + lightboxImages.length) % lightboxImages.length);
+  }
 
   return (
-    <div className="min-h-screen bg-[#f6f3ee] text-[#2d2a26]">
-      <div className="mx-auto max-w-3xl px-4 pb-24 pt-6 sm:px-6">
-        <header className="mb-5 rounded-[28px] border border-[#d9d1c5] bg-[#fbf8f3] px-5 py-5 shadow-[0_10px_30px_rgba(60,50,40,0.04)]">
-          <div className="mb-3 flex items-start justify-between gap-4">
+    <div className="min-h-screen bg-[#f3f0e8] text-[#2f2d29]">
+      <div
+        className="pointer-events-none fixed inset-0 opacity-[0.07]"
+        style={{
+          backgroundImage:
+            "radial-gradient(circle at 1px 1px, rgba(47,45,41,0.7) 1px, transparent 0)",
+          backgroundSize: "16px 16px",
+        }}
+      />
+
+      <div className="relative mx-auto max-w-3xl px-4 pb-24 pt-5 sm:px-6">
+        <header className="mb-5 rounded-[28px] border border-[#d9d2c5] bg-[#f7f4ed]/95 px-5 py-5 shadow-[0_10px_30px_rgba(80,68,49,0.06)] backdrop-blur">
+          <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="text-[11px] uppercase tracking-[0.24em] text-[#8f816b]">Daily Frame.</div>
-              <h1 className="mt-1 text-[27px] font-medium tracking-[-0.03em] text-[#3a342d]">Ride the day. Keep the moment.</h1>
+              <div className="mb-2 text-[11px] uppercase tracking-[0.24em] text-[#8f816b]">
+                Daily Frame.
+              </div>
+              <h1 className="text-[28px] font-semibold leading-none tracking-[-0.03em] text-[#4a4338]">
+                Ride the day. Keep the moment.
+              </h1>
+              <p className="mt-2 text-[13px] text-[#7d7468]">
+                Quick to log on the phone. Calm to browse later.
+              </p>
             </div>
-            <div className="hidden text-right sm:block">
-              <div className="text-[11px] uppercase tracking-[0.24em] text-[#9b907f]">Month</div>
-              <div className="mt-1 text-sm text-[#60584f]">{monthLabel(selectedMonth)}</div>
+            <div className="hidden rounded-full border border-[#dad3c7] bg-[#f2ede4] px-3 py-1.5 text-[11px] uppercase tracking-[0.18em] text-[#8f816b] sm:block">
+              Firebase sync
             </div>
           </div>
 
-          <div className="flex gap-2">
-            {[
-              { key: "Journal", label: "Journal" },
-              { key: "Summary", label: "Summary" },
-            ].map((tab) => (
+          <div className="mt-4 flex gap-2">
+            {["Journal", "Summary"].map((tab) => (
               <button
-                key={tab.key}
-                onClick={() => setActiveView(tab.key)}
-                className={cls(
-                  "rounded-full border px-4 py-2 text-sm transition",
-                  activeView === tab.key
+                key={tab}
+                type="button"
+                onClick={() => setSelectedTab(tab)}
+                className={classNames(
+                  "rounded-full border px-4 py-2 text-[13px] transition",
+                  selectedTab === tab
                     ? "border-[#8f816b] bg-[#8f816b] text-white"
-                    : "border-[#d8d0c4] bg-white text-[#655c52] hover:border-[#beb3a4]"
+                    : "border-[#d8d1c3] bg-[#f7f4ed] text-[#655d52] hover:bg-[#f0ebe2]"
                 )}
               >
-                {tab.label}
+                {tab}
               </button>
             ))}
           </div>
         </header>
 
-        <section className="mb-5 rounded-[28px] border border-[#ded6ca] bg-[#fbf8f4] p-4 shadow-[0_10px_24px_rgba(60,50,40,0.04)] sm:p-5">
-          <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
-            {ACTIVITY_TYPES.map((item) => {
-              const Icon = item.icon;
-              const active = selectedType === item.key;
-              return (
-                <button
-                  key={item.key}
-                  onClick={() => handleTypeSelect(item.key)}
-                  className={cls(
-                    "inline-flex shrink-0 items-center gap-2 rounded-full border px-3.5 py-2 text-sm transition",
-                    active
-                      ? "border-[#8f816b] bg-[#efe7dc] text-[#433b32]"
-                      : "border-[#ddd4c7] bg-white text-[#6b6358] hover:border-[#c7bcae]"
-                  )}
-                >
-                  <Icon size={15} />
-                  {item.label}
-                </button>
-              );
-            })}
+        <section className="mb-5 rounded-[28px] border border-[#d9d2c5] bg-[#fbf8f1] p-4 shadow-[0_8px_24px_rgba(80,68,49,0.05)] sm:p-5">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.22em] text-[#8f816b]">
+                {editingId ? "Edit entry" : "New entry"}
+              </div>
+              <div className="mt-1 text-[14px] text-[#6f675b]">
+                Capture first, polish later.
+              </div>
+            </div>
+            {editingId ? (
+              <button
+                type="button"
+                onClick={clearForm}
+                className="rounded-full border border-[#d9d2c5] px-3 py-1.5 text-[12px] text-[#6b6458] hover:bg-[#f1ece3]"
+              >
+                Cancel edit
+              </button>
+            ) : null}
           </div>
 
-          <div className="grid gap-3">
-            <div>
-              <label className="mb-1 block text-[11px] uppercase tracking-[0.2em] text-[#8d8171]">Title</label>
-              <input
-                value={form.title}
-                onChange={(e) => handleFormChange("title", e.target.value)}
-                placeholder={activityMeta.titlePlaceholder}
-                className="w-full rounded-2xl border border-[#d9d1c5] bg-white px-4 py-3 text-sm outline-none transition placeholder:text-[#b3a89b] focus:border-[#8f816b]"
+          <div className="mb-4 -mx-1 overflow-x-auto">
+            <div className="flex min-w-max gap-2 px-1">
+              {ENTRY_TYPES.map(({ label, icon: Icon }) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => setType(label)}
+                  className={classNames(
+                    "inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[13px] transition",
+                    form.type === label
+                      ? "border-[#8f816b] bg-[#efe7d8] text-[#4a4338]"
+                      : "border-[#d9d2c5] bg-white/80 text-[#6c655a] hover:bg-[#f4efe6]"
+                  )}
+                >
+                  <Icon size={14} />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <Field
+              label={form.type === "Cafe" ? "Cafe / Title" : form.type === "Journal" ? "Title" : "Ride title"}
+              value={form.title}
+              onChange={(v) => updateForm("title", v)}
+              placeholder={
+                form.type === "Ride"
+                  ? "Don Valley loop"
+                  : form.type === "Walk"
+                  ? "Lunch walk"
+                  : form.type === "Cafe"
+                  ? "Sam James"
+                  : "Small note from the day"
+              }
+            />
+
+            <Field
+              label="Notes"
+              value={form.note}
+              onChange={(v) => updateForm("note", v)}
+              placeholder="What stood out today?"
+              textarea
+            />
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field
+                label="Date"
+                value={form.date}
+                onChange={(v) => updateForm("date", v)}
+                type="date"
+                icon={CalendarDays}
+              />
+              <Field
+                label="Time"
+                value={form.time}
+                onChange={(v) => updateForm("time", v)}
+                type="time"
+                icon={Clock3}
+              />
+            </div>
+
+            <Field
+              label="Place"
+              value={form.place}
+              onChange={(v) => updateForm("place", v)}
+              placeholder="Toronto"
+              icon={MapPin}
+            />
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field
+                label={MOVEMENT_TYPES.includes(form.type) ? "Duration (mins)" : "Duration"}
+                value={form.duration}
+                onChange={(v) => updateForm("duration", v)}
+                placeholder={MOVEMENT_TYPES.includes(form.type) ? "55" : "Optional"}
+                inputMode="numeric"
+                disabled={!MOVEMENT_TYPES.includes(form.type)}
+              />
+              <Field
+                label="Cafe rating"
+                value={form.cafeRating}
+                onChange={(v) => updateForm("cafeRating", v)}
+                placeholder="4.5 / 5"
+                disabled={form.type !== "Cafe"}
               />
             </div>
 
             <div>
-              <label className="mb-1 block text-[11px] uppercase tracking-[0.2em] text-[#8d8171]">Note</label>
-              <textarea
-                value={form.note}
-                onChange={(e) => handleFormChange("note", e.target.value)}
-                placeholder={activityMeta.notePlaceholder}
-                rows={4}
-                className="w-full rounded-2xl border border-[#d9d1c5] bg-white px-4 py-3 text-sm outline-none transition placeholder:text-[#b3a89b] focus:border-[#8f816b]"
-              />
-            </div>
+              <div className="mb-1.5 text-[11px] uppercase tracking-[0.18em] text-[#8f816b]">
+                Photos
+              </div>
+              <div className="rounded-[22px] border border-dashed border-[#cfc6b7] bg-[#f6f2ea] p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="inline-flex items-center gap-2 rounded-full border border-[#d0c7b9] bg-white px-3 py-2 text-[13px] text-[#5e564b] hover:bg-[#f5efe7]"
+                  >
+                    <ImageIcon size={14} />
+                    Choose image
+                  </button>
+                  <div className="text-[12px] text-[#7d7468]">
+                    Add one or several photos.
+                  </div>
+                </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field icon={CalendarDays} label="Date">
                 <input
-                  type="date"
-                  value={form.date}
-                  onChange={(e) => handleFormChange("date", e.target.value)}
-                  className="w-full bg-transparent text-sm outline-none"
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleFilesChange}
+                  className="hidden"
                 />
-              </Field>
-              <Field icon={Clock3} label="Time">
-                <input
-                  type="time"
-                  value={form.time}
-                  onChange={(e) => handleFormChange("time", e.target.value)}
-                  className="w-full bg-transparent text-sm outline-none"
-                />
-              </Field>
-            </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field icon={MapPin} label="Place">
-                <input
-                  value={form.place}
-                  onChange={(e) => handleFormChange("place", e.target.value)}
-                  placeholder="Location"
-                  className="w-full bg-transparent text-sm outline-none placeholder:text-[#b3a89b]"
-                />
-              </Field>
-
-              {activityMeta.needsDuration ? (
-                <Field icon={Clock3} label="Duration">
-                  <input
-                    inputMode="numeric"
-                    value={form.duration}
-                    onChange={(e) => handleFormChange("duration", e.target.value.replace(/[^0-9]/g, ""))}
-                    placeholder="Minutes"
-                    className="w-full bg-transparent text-sm outline-none placeholder:text-[#b3a89b]"
-                  />
-                </Field>
-              ) : selectedType === "Cafe" ? (
-                <Field icon={Coffee} label="Rating">
-                  <input
-                    value={form.rating}
-                    onChange={(e) => handleFormChange("rating", e.target.value)}
-                    placeholder="Optional"
-                    className="w-full bg-transparent text-sm outline-none placeholder:text-[#b3a89b]"
-                  />
-                </Field>
-              ) : (
-                <div className="hidden sm:block" />
-              )}
-            </div>
-
-            <div>
-              <label className="mb-2 block text-[11px] uppercase tracking-[0.2em] text-[#8d8171]">Photos</label>
-              <div className="rounded-[24px] border border-[#d9d1c5] bg-white p-3">
-                <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-[#cfc6b8] px-4 py-5 text-sm text-[#6d645a] transition hover:border-[#8f816b] hover:text-[#494037]">
-                  <Camera size={16} />
-                  Choose image
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleImages}
-                    className="hidden"
-                  />
-                </label>
-
-                {form.images?.length > 0 ? (
+                {pickedPreviews.length ? (
                   <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
-                    {form.images.map((img) => (
-                      <div key={img.id} className="group relative overflow-hidden rounded-2xl border border-[#e2dbd0] bg-[#f3eee7]">
-                        <img src={img.url} alt={img.name || "Upload"} className="aspect-square h-full w-full object-cover" />
+                    {pickedPreviews.map((src, index) => (
+                      <div key={`${src}-${index}`} className="group relative overflow-hidden rounded-2xl border border-[#ddd4c7] bg-white">
+                        <img src={src} alt="preview" className="h-24 w-full object-cover" />
                         <button
-                          onClick={() => removeImage(img.id)}
-                          className="absolute right-1.5 top-1.5 rounded-full bg-[rgba(40,35,30,0.78)] p-1 text-white opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100"
-                          aria-label="Remove image"
+                          type="button"
+                          onClick={() => {
+                            const nextFiles = pickedFiles.filter((_, i) => i !== index);
+                            const nextPreviews = pickedPreviews.filter((_, i) => i !== index);
+                            URL.revokeObjectURL(src);
+                            setPickedFiles(nextFiles);
+                            setPickedPreviews(nextPreviews);
+                          }}
+                          className="absolute right-2 top-2 rounded-full bg-black/60 p-1 text-white opacity-90"
                         >
                           <X size={12} />
                         </button>
@@ -501,262 +622,334 @@ export default function App() {
 
             <div className="flex gap-2 pt-1">
               <button
-                onClick={handleSubmit}
-                className="rounded-full bg-[#8f816b] px-5 py-2.5 text-sm text-white transition hover:bg-[#7d705d]"
+                type="submit"
+                disabled={saving || uploading}
+                className="inline-flex min-w-[130px] items-center justify-center gap-2 rounded-full bg-[#8f816b] px-5 py-3 text-[13px] font-medium text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {editingId ? "Update Entry" : "Add Entry"}
+                {saving || uploading ? <Loader2 size={15} className="animate-spin" /> : null}
+                {editingId ? "Update entry" : "Add entry"}
               </button>
               <button
+                type="button"
                 onClick={clearForm}
-                className="rounded-full border border-[#d6cec2] bg-white px-5 py-2.5 text-sm text-[#645c53] transition hover:border-[#bdb2a4]"
+                className="rounded-full border border-[#d7d0c3] px-4 py-3 text-[13px] text-[#5f584d] hover:bg-[#f1ece4]"
               >
                 Clear
               </button>
             </div>
-          </div>
+          </form>
         </section>
 
-        {activeView === "Journal" ? (
-          <section className="space-y-6">
-            {Object.keys(groupedJournal).length === 0 ? (
-              <EmptyState
-                title="No entries yet."
-                text="Start with a ride, a walk, a cafe stop, or a small note from the day."
-              />
-            ) : (
-              Object.entries(groupedJournal).map(([date, dayEntries]) => (
-                <div key={date}>
-                  <div className="mb-3">
-                    <div className="text-[11px] uppercase tracking-[0.24em] text-[#8f816b]">{formatMonthYear(date)}</div>
-                    <h2 className="mt-1 text-lg font-medium tracking-[-0.02em] text-[#3b352d]">{formatDisplayDate(date)}</h2>
-                  </div>
+        {selectedTab === "Journal" ? (
+          <section className="space-y-3">
+            {loadingEntries ? (
+              <div className="rounded-[28px] border border-[#d9d2c5] bg-[#fbf8f1] p-6 text-[14px] text-[#6f675b]">
+                Loading your journal…
+              </div>
+            ) : groupedEntries.length ? (
+              groupedEntries.map((row) => {
+                if (row.type === "month") {
+                  return (
+                    <div key={row.key} className="sticky top-2 z-10 pt-2">
+                      <div className="inline-flex rounded-full border border-[#d8d1c4] bg-[#f7f3eb]/95 px-3 py-1.5 text-[11px] uppercase tracking-[0.22em] text-[#8f816b] shadow-sm backdrop-blur">
+                        {row.label}
+                      </div>
+                    </div>
+                  );
+                }
 
-                  <div className="space-y-3">
-                    {dayEntries.map((entry) => (
-                      <EntryCard
-                        key={entry.id}
-                        entry={entry}
-                        onEdit={() => handleEdit(entry)}
-                        onDelete={() => handleDelete(entry.id)}
-                        onImageClick={(url) => setLightboxImage(url)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))
+                return (
+                  <EntryCard
+                    key={row.key}
+                    item={row.item}
+                    onEdit={() => handleEdit(row.item)}
+                    onDelete={() => handleDelete(row.item)}
+                    onOpenLightbox={openLightbox}
+                  />
+                );
+              })
+            ) : (
+              <div className="rounded-[28px] border border-[#d9d2c5] bg-[#fbf8f1] p-6 text-[14px] text-[#6f675b]">
+                No entries yet. Start with a ride, walk, cafe, or small journal note.
+              </div>
             )}
           </section>
         ) : (
-          <section className="space-y-5">
-            <div className="rounded-[28px] border border-[#ddd5c8] bg-[#fbf8f4] p-4 shadow-[0_10px_24px_rgba(60,50,40,0.04)] sm:p-5">
-              <div className="flex items-center justify-between gap-3">
-                <button
-                  onClick={() => goMonth(-1)}
-                  className="rounded-full border border-[#d5ccbf] bg-white p-2 text-[#645b51] hover:border-[#bcb0a1]"
-                  aria-label="Previous month"
-                >
-                  <ChevronLeft size={18} />
-                </button>
-
-                <div className="text-center">
-                  <div className="text-[11px] uppercase tracking-[0.24em] text-[#8f816b]">Monthly Summary</div>
-                  <h2 className="mt-1 text-[24px] font-medium tracking-[-0.03em] text-[#3a342d]">{monthLabel(selectedMonth)}</h2>
+          <section className="space-y-4">
+            <div className="rounded-[28px] border border-[#d9d2c5] bg-[#fbf8f1] p-4 shadow-[0_8px_24px_rgba(80,68,49,0.05)] sm:p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.22em] text-[#8f816b]">
+                    Monthly summary
+                  </div>
+                  <div className="mt-1 text-[18px] font-semibold tracking-[-0.02em] text-[#4a4338]">
+                    {availableMonths.length ? formatMonthLabel(selectedMonth) : formatMonthYear(getTodayLocalDate())}
+                  </div>
                 </div>
 
-                <button
-                  onClick={() => goMonth(1)}
-                  className="rounded-full border border-[#d5ccbf] bg-white p-2 text-[#645b51] hover:border-[#bcb0a1]"
-                  aria-label="Next month"
-                >
-                  <ChevronRight size={18} />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const idx = availableMonths.findIndex((m) => m.key === selectedMonth);
+                      if (idx >= 0 && idx < availableMonths.length - 1) {
+                        setSelectedMonth(availableMonths[idx + 1].key);
+                      }
+                    }}
+                    className="rounded-full border border-[#d7d0c3] p-2 text-[#635b50] hover:bg-[#f0ebe2]"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+
+                  <select
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    className="rounded-full border border-[#d7d0c3] bg-white px-4 py-2 text-[13px] text-[#534c42] outline-none"
+                  >
+                    {availableMonths.length ? (
+                      availableMonths.map((m) => (
+                        <option key={m.key} value={m.key}>
+                          {m.label}
+                        </option>
+                      ))
+                    ) : (
+                      <option value={selectedMonth}>{formatMonthLabel(selectedMonth)}</option>
+                    )}
+                  </select>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const idx = availableMonths.findIndex((m) => m.key === selectedMonth);
+                      if (idx > 0) {
+                        setSelectedMonth(availableMonths[idx - 1].key);
+                      }
+                    }}
+                    className="rounded-full border border-[#d7d0c3] p-2 text-[#635b50] hover:bg-[#f0ebe2]"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
               </div>
 
-              {monthsWithEntries.length > 0 ? (
-                <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
-                  {monthsWithEntries.map((month) => (
-                    <button
-                      key={month}
-                      onClick={() => setSelectedMonth(month)}
-                      className={cls(
-                        "shrink-0 rounded-full border px-3 py-1.5 text-sm transition",
-                        month === selectedMonth
-                          ? "border-[#8f816b] bg-[#efe7dc] text-[#433b32]"
-                          : "border-[#ddd4c7] bg-white text-[#6b6358]"
-                      )}
-                    >
-                      {monthLabel(month)}
-                    </button>
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <StatCard label="Entries" value={monthStats.total} icon={BarChart3} />
+                <StatCard label="Rides" value={monthStats.Ride} icon={Bike} />
+                <StatCard label="Walks" value={monthStats.Walk} icon={Footprints} />
+                <StatCard label="Cafes" value={monthStats.Cafe} icon={Coffee} />
+                <StatCard label="Journal" value={monthStats.Journal} icon={BookOpen} />
+                <StatCard label="Photos" value={monthStats.photos} icon={Camera} />
+              </div>
+
+              <div className="mt-3 rounded-[22px] border border-[#e0d9cc] bg-[#f5f1e8] px-4 py-3 text-[13px] text-[#645d52]">
+                Movement time this month: <span className="font-semibold text-[#4a4338]">{monthStats.minutes} mins</span>
+              </div>
+            </div>
+
+            <div className="rounded-[28px] border border-[#d9d2c5] bg-[#fbf8f1] p-4 shadow-[0_8px_24px_rgba(80,68,49,0.05)] sm:p-5">
+              <div className="mb-3 text-[11px] uppercase tracking-[0.22em] text-[#8f816b]">
+                Entries in this month
+              </div>
+
+              {monthEntries.length ? (
+                <div className="space-y-3">
+                  {monthEntries.map((item) => (
+                    <EntryCard
+                      key={item.id}
+                      item={item}
+                      compact
+                      onEdit={() => handleEdit(item)}
+                      onDelete={() => handleDelete(item)}
+                      onOpenLightbox={openLightbox}
+                    />
                   ))}
                 </div>
-              ) : null}
+              ) : (
+                <div className="text-[14px] text-[#6f675b]">No entries in this month yet.</div>
+              )}
             </div>
-
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <StatCard label="Total entries" value={summaryStats.total} />
-              <StatCard label="Rides" value={summaryStats.Ride} sub={summaryStats.rideMinutes ? `${summaryStats.rideMinutes} min` : ""} />
-              <StatCard label="Walks" value={summaryStats.Walk} sub={summaryStats.walkMinutes ? `${summaryStats.walkMinutes} min` : ""} />
-              <StatCard label="Cafes" value={summaryStats.Cafe} sub={summaryStats.cafeRated ? `${summaryStats.cafeRated} rated` : ""} />
-              <StatCard label="Journal notes" value={summaryStats.Journal} />
-              <StatCard label="Photos" value={summaryStats.images} />
-            </div>
-
-            {summaryEntries.length === 0 ? (
-              <EmptyState
-                title="No entries for this month."
-                text="Try another month or add a new note, ride, walk, or cafe visit."
-              />
-            ) : (
-              <div className="space-y-5">
-                {Object.entries(summaryGroups).map(([label, dayEntries]) => (
-                  <div key={label}>
-                    <div className="mb-2 text-[11px] uppercase tracking-[0.22em] text-[#8f816b]">{label}</div>
-                    <div className="space-y-3">
-                      {dayEntries.map((entry) => (
-                        <EntryCard
-                          key={entry.id}
-                          entry={entry}
-                          onEdit={() => handleEdit(entry)}
-                          onDelete={() => handleDelete(entry.id)}
-                          onImageClick={(url) => setLightboxImage(url)}
-                          compact
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </section>
         )}
       </div>
 
-      {lightboxImage ? (
-        <button
-          onClick={() => setLightboxImage("")}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(20,18,16,0.88)] p-4"
-        >
-          <img src={lightboxImage} alt="Expanded entry" className="max-h-[92vh] max-w-[92vw] rounded-2xl object-contain" />
-        </button>
+      {lightboxImages.length ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4">
+          <button
+            type="button"
+            onClick={closeLightbox}
+            className="absolute right-4 top-4 rounded-full border border-white/20 bg-white/10 p-2 text-white"
+          >
+            <X size={18} />
+          </button>
+
+          {lightboxImages.length > 1 ? (
+            <button
+              type="button"
+              onClick={prevLightbox}
+              className="absolute left-4 rounded-full border border-white/20 bg-white/10 p-2 text-white"
+            >
+              <ChevronLeft size={20} />
+            </button>
+          ) : null}
+
+          <img
+            src={lightboxImages[lightboxIndex]?.url}
+            alt="enlarged"
+            className="max-h-[88vh] max-w-[92vw] rounded-2xl object-contain shadow-2xl"
+          />
+
+          {lightboxImages.length > 1 ? (
+            <button
+              type="button"
+              onClick={nextLightbox}
+              className="absolute right-4 rounded-full border border-white/20 bg-white/10 p-2 text-white"
+            >
+              <ChevronRight size={20} />
+            </button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
 }
 
-function Field({ icon: Icon, label, children }) {
+function EntryCard({ item, onEdit, onDelete, onOpenLightbox, compact = false }) {
+  const Icon = typeIcon(item.type);
+  const images = Array.isArray(item.images) ? item.images : [];
+
   return (
-    <div className="rounded-2xl border border-[#d9d1c5] bg-white px-4 py-3">
-      <div className="mb-1 flex items-center gap-2 text-[11px] uppercase tracking-[0.2em] text-[#8d8171]">
-        <Icon size={13} />
-        {label}
+    <article className="rounded-[28px] border border-[#d9d2c5] bg-[#fbf8f1] p-4 shadow-[0_8px_24px_rgba(80,68,49,0.05)] sm:p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1 rounded-full border border-[#d8d1c4] bg-[#f3eee5] px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] text-[#8f816b]">
+              <Icon size={12} />
+              {item.type || "Entry"}
+            </span>
+            <span className="text-[11px] uppercase tracking-[0.16em] text-[#938977]">
+              {formatFullDate(item.date)}
+            </span>
+            {item.time ? (
+              <span className="text-[11px] uppercase tracking-[0.16em] text-[#938977]">
+                {item.time}
+              </span>
+            ) : null}
+          </div>
+
+          <h3 className="text-[20px] font-semibold tracking-[-0.025em] text-[#4b4439]">
+            {item.title || "Untitled"}
+          </h3>
+
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-[#70685c]">
+            {item.place ? <span>Place: {item.place}</span> : null}
+            {item.duration ? <span>Duration: {item.duration} mins</span> : null}
+            {item.cafeRating ? <span>Rating: {item.cafeRating}</span> : null}
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={onEdit}
+            className="rounded-full border border-[#d7d0c3] p-2 text-[#665e53] hover:bg-[#f0ebe2]"
+          >
+            <Pencil size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            className="rounded-full border border-[#d7d0c3] p-2 text-[#665e53] hover:bg-[#f0ebe2]"
+          >
+            <Trash2 size={15} />
+          </button>
+        </div>
       </div>
-      {children}
-    </div>
-  );
-}
 
-function StatCard({ label, value, sub = "" }) {
-  return (
-    <div className="rounded-[24px] border border-[#ddd5c8] bg-[#fbf8f4] px-4 py-4 shadow-[0_8px_20px_rgba(60,50,40,0.03)]">
-      <div className="text-[11px] uppercase tracking-[0.22em] text-[#8f816b]">{label}</div>
-      <div className="mt-2 text-[30px] font-medium tracking-[-0.04em] text-[#3a342d]">{value}</div>
-      {sub ? <div className="mt-1 text-sm text-[#6b6358]">{sub}</div> : null}
-    </div>
-  );
-}
+      {item.note ? (
+        <p className="mt-3 whitespace-pre-wrap text-[14px] leading-6 text-[#564f45]">{item.note}</p>
+      ) : null}
 
-function EntryCard({ entry, onEdit, onDelete, onImageClick, compact = false }) {
-  const typeMeta = ACTIVITY_TYPES.find((item) => item.key === entry.type) || ACTIVITY_TYPES[0];
-  const Icon = typeMeta.icon;
-
-  return (
-    <article className="overflow-hidden rounded-[28px] border border-[#ddd5c8] bg-[#fbf8f4] shadow-[0_10px_24px_rgba(60,50,40,0.04)]">
-      {entry.images?.length ? (
-        <div className={cls("grid gap-[1px] bg-[#e7dfd4]", entry.images.length === 1 ? "grid-cols-1" : "grid-cols-2")}>
-          {entry.images.map((img) => (
+      {images.length ? (
+        <div className={classNames("mt-4 grid gap-2", compact ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-3") }>
+          {images.map((image, index) => (
             <button
-              key={img.id}
-              onClick={() => onImageClick(img.url)}
-              className="bg-[#f3eee7]"
+              key={`${image.url}-${index}`}
+              type="button"
+              onClick={() => onOpenLightbox(images, index)}
+              className="overflow-hidden rounded-[20px] border border-[#ddd4c7] bg-white text-left"
             >
               <img
-                src={img.url}
-                alt={img.name || entry.title || entry.type}
-                className={cls(
-                  "w-full object-cover",
-                  entry.images.length === 1 ? "max-h-[420px]" : compact ? "h-40" : "h-48"
+                src={image.url}
+                alt={image.name || item.title || "entry image"}
+                className={classNames(
+                  "w-full object-cover transition hover:scale-[1.02]",
+                  compact ? "h-24" : "h-40"
                 )}
               />
             </button>
           ))}
         </div>
       ) : null}
-
-      <div className="p-4 sm:p-5">
-        <div className="mb-3 flex items-start justify-between gap-3">
-          <div>
-            <div className="mb-1 flex items-center gap-2 text-[11px] uppercase tracking-[0.22em] text-[#8f816b]">
-              <Icon size={13} />
-              {entry.type}
-              {entry.time ? <span className="text-[#b0a393]">|</span> : null}
-              {entry.time ? <span>{entry.time}</span> : null}
-              {entry.place ? <span className="text-[#b0a393]">|</span> : null}
-              {entry.place ? <span>{entry.place}</span> : null}
-            </div>
-            <h3 className="text-[21px] font-medium tracking-[-0.03em] text-[#3a342d]">{entry.title || entry.type}</h3>
-          </div>
-
-          <div className="flex gap-2">
-            <button
-              onClick={onEdit}
-              className="rounded-full border border-[#d6cec2] bg-white p-2 text-[#645c53] hover:border-[#bdb2a4]"
-              aria-label="Edit entry"
-            >
-              <Pencil size={15} />
-            </button>
-            <button
-              onClick={onDelete}
-              className="rounded-full border border-[#d6cec2] bg-white p-2 text-[#645c53] hover:border-[#bdb2a4]"
-              aria-label="Delete entry"
-            >
-              <Trash2 size={15} />
-            </button>
-          </div>
-        </div>
-
-        {(entry.duration || entry.rating) && (
-          <div className="mb-3 flex flex-wrap gap-2 text-xs text-[#62594f]">
-            {entry.duration ? (
-              <span className="rounded-full bg-[#efe7dc] px-3 py-1">{entry.duration} min</span>
-            ) : null}
-            {entry.rating ? <span className="rounded-full bg-[#efe7dc] px-3 py-1">Rating: {entry.rating}</span> : null}
-          </div>
-        )}
-
-        {entry.note ? <p className="text-[15px] leading-6 text-[#4f473f]">{entry.note}</p> : null}
-
-        <div className="mt-4 flex items-center gap-2 text-[12px] text-[#8a7e6e]">
-          <CalendarDays size={13} />
-          {formatDisplayDate(entry.date)}
-          {entry.images?.length ? (
-            <>
-              <span className="text-[#b0a393]">•</span>
-              <ImageIcon size={13} />
-              {entry.images.length}
-            </>
-          ) : null}
-        </div>
-      </div>
     </article>
   );
 }
 
-function EmptyState({ title, text }) {
+function Field({
+  label,
+  value,
+  onChange,
+  placeholder,
+  textarea = false,
+  type = "text",
+  icon: Icon,
+  inputMode,
+  disabled = false,
+}) {
+  const baseClass = classNames(
+    "w-full rounded-[20px] border border-[#ddd4c7] bg-white/90 px-4 py-3 text-[14px] text-[#3f392f] outline-none transition placeholder:text-[#aaa08f] focus:border-[#b6a68a] focus:bg-white",
+    disabled && "cursor-not-allowed bg-[#f2eee6] text-[#998f81]"
+  );
+
   return (
-    <div className="rounded-[28px] border border-[#ddd5c8] bg-[#fbf8f4] px-5 py-10 text-center shadow-[0_10px_24px_rgba(60,50,40,0.04)]">
-      <div className="text-[11px] uppercase tracking-[0.22em] text-[#8f816b]">Daily Frame</div>
-      <h3 className="mt-2 text-[22px] font-medium tracking-[-0.03em] text-[#3a342d]">{title}</h3>
-      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#655d53]">{text}</p>
+    <label className="block">
+      <div className="mb-1.5 flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em] text-[#8f816b]">
+        {Icon ? <Icon size={12} /> : null}
+        <span>{label}</span>
+      </div>
+      <div className="relative">
+        {textarea ? (
+          <textarea
+            rows={4}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={placeholder}
+            disabled={disabled}
+            className={classNames(baseClass, "resize-none")}
+          />
+        ) : (
+          <input
+            type={type}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={placeholder}
+            inputMode={inputMode}
+            disabled={disabled}
+            className={baseClass}
+          />
+        )}
+      </div>
+    </label>
+  );
+}
+
+function StatCard({ label, value, icon: Icon }) {
+  return (
+    <div className="rounded-[22px] border border-[#ddd4c7] bg-white/85 px-4 py-4">
+      <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-[#8f816b]">
+        <Icon size={12} />
+        {label}
+      </div>
+      <div className="mt-2 text-[28px] font-semibold tracking-[-0.03em] text-[#4a4338]">{value}</div>
     </div>
   );
 }
