@@ -46,8 +46,8 @@ const MOVEMENT_TYPES = ["Ride", "Walk"];
 // Put your OLD collection name first.
 // This version will read from any of these if they exist,
 // but all NEW saves go into the first one.
-const COLLECTION_CANDIDATES = ["daily-frame"];
-const PRIMARY_COLLECTION = "daily-frames";
+const COLLECTION_CANDIDATES = ["dailyFrames", "daily-frame", "entries"];
+const PRIMARY_COLLECTION = "dailyFrames";
 
 const EMPTY_FORM = {
   type: "Ride",
