@@ -23,8 +23,6 @@ import {
   deleteDoc,
   doc,
   onSnapshot,
-  orderBy,
-  query,
   serverTimestamp,
   updateDoc,
 } from "firebase/firestore";
@@ -275,7 +273,7 @@ export default function App() {
     let readyCount = 0;
 
     COLLECTION_CANDIDATES.forEach((collectionName) => {
-      const q = query(collection(db, collectionName), orderBy("date", "desc"));
+      const q = collection(db, collectionName);
 
       const unsub = onSnapshot(
         q,
