@@ -588,7 +588,7 @@ export default function App() {
               <div className="mb-2 text-[11px] uppercase tracking-[0.24em] text-[#8f816b]">
                 Daily Frame.
               </div>
-              <h1 className="text-[24px] font-semibold leading-none tracking-[-0.03em] text-[#4a4338]">
+              <h1 className="text-[28px] font-semibold leading-none tracking-[-0.03em] text-[#4a4338]">
                 Ride the day. Keep the moment.
               </h1>
               <p className="mt-2 text-[13px] text-[#7d7468]">
@@ -1124,3 +1124,85 @@ function StatCard({ label, value, icon: Icon }) {
     </div>
   );
 }
+
+// 4x6 printable Polaroid-style card
+// Use inside a print view later, for example:
+// <PrintCard4x6
+//   title="Don Valley loop"
+//   date="2026-04-04"
+//   place="Toronto"
+//   imageUrl={entry.images?.[0]?.url}
+// />
+export function PrintCard4x6({
+  title = "Untitled",
+  date = "",
+  place = "",
+  imageUrl = "",
+  type = "Journal",
+}) {
+  const meta = [formatPrintDate(date), place].filter(Boolean).join(" · ");
+
+  return (
+    <div className="print-card-4x6 mx-auto bg-[#f4efe6] text-[#4a4338] shadow-[0_6px_18px_rgba(0,0,0,0.08)]">
+      <div className="h-full w-full border border-[#e6dfd3] bg-[#f4efe6] p-[0.18in]">
+        <div className="h-full w-full flex flex-col">
+          <div className="bg-white p-[0.08in] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.03)]">
+            <div className="aspect-[1/1] w-full overflow-hidden bg-[#ebe6dd]">
+              {imageUrl ? (
+                <img
+                  src={imageUrl}
+                  alt={title}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center text-[11px] uppercase tracking-[0.18em] text-[#9a907f]">
+                  No image
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex-1 px-[0.04in] pb-[0.03in] pt-[0.14in]">
+            <div className="text-[8.5pt] font-medium tracking-[-0.01em] text-[#4a4338]">
+              {title}
+            </div>
+            <div className="mt-[0.03in] text-[6.5pt] uppercase tracking-[0.16em] text-[#8f816b]">
+              {meta || type}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function PrintCardSheet4x6({ entries = [] }) {
+  return (
+    <div className="bg-white p-6 print:p-0">
+      <div className="mx-auto grid max-w-[8.5in] grid-cols-1 gap-6 justify-items-center print:max-w-none print:gap-[0.15in]">
+        {entries.map((entry) => (
+          <PrintCard4x6
+            key={`${entry.sourceCollection || "entry"}-${entry.id}`}
+            title={entry.title}
+            date={entry.date}
+            place={entry.place}
+            type={entry.type}
+            imageUrl={entry.images?.[0]?.url || ""}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function formatPrintDate(dateStr) {
+  if (!dateStr) return "";
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  return dt.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
