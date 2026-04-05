@@ -42,10 +42,6 @@ const ENTRY_TYPES = [
 ];
 
 const MOVEMENT_TYPES = ["Ride", "Walk"];
-
-// Put your OLD collection name first.
-// This version will read from any of these if they exist,
-// but all NEW saves go into the first one.
 const COLLECTION_CANDIDATES = ["dailyFrames", "daily-frame", "entries"];
 const PRIMARY_COLLECTION = "dailyFrames";
 
@@ -111,7 +107,9 @@ function formatMonthLabel(monthKey) {
 }
 
 function entryDateTimeValue(item) {
-  return `${item.date || ""}T${item.time || "00:00"}`;
+  const dateValue = item.date || "0000-00-00";
+  const timeValue = item.time || "00:00";
+  return `${dateValue}T${timeValue}`;
 }
 
 function sortEntriesNewest(entries) {
@@ -201,7 +199,9 @@ function normalizeOldImages(raw) {
 
   if (typeof raw === "object") {
     const url = raw.url || raw.downloadURL || raw.src || raw.photoURL;
-    return url ? [{ url, name: raw.name || "image-1", path: raw.path || raw.fullPath || "" }] : [];
+    return url
+      ? [{ url, name: raw.name || "image-1", path: raw.path || raw.fullPath || "" }]
+      : [];
   }
 
   return [];
@@ -218,27 +218,33 @@ function normalizeType(rawType) {
 }
 
 function normalizeEntry(id, data, sourceCollection) {
-  const date =
-    data.date ||
-    data.entryDate ||
-    data.createdDate ||
-    getTodayLocalDate();
-
-  const time =
-    data.time ||
-    data.entryTime ||
-    data.createdTime ||
-    "";
+  const date = data.date || data.entryDate || data.createdDate || getTodayLocalDate();
+  const time = data.time || data.entryTime || data.createdTime || "";
 
   const images = normalizeOldImages(
-    data.images ?? data.photos ?? data.photo ?? data.image ?? data.imageUrls ?? []
+    data.images ??
+      data.photos ??
+      data.photo ??
+      data.image ??
+      data.imageUrls ??
+      data.photoURL ??
+      []
   );
+
+  const derivedTitle =
+    data.title ||
+    data.name ||
+    data.label ||
+    data.place ||
+    data.location ||
+    data.cafe ||
+    (data.note ? data.note.slice(0, 36) : "");
 
   return {
     id,
     sourceCollection,
     type: normalizeType(data.type || data.category || data.activityType),
-    title: data.title || data.name || data.label || "",
+    title: derivedTitle || "Untitled",
     note: data.note || data.notes || data.description || "",
     date,
     time,
@@ -246,6 +252,8 @@ function normalizeEntry(id, data, sourceCollection) {
     duration: data.duration || data.minutes || "",
     cafeRating: data.cafeRating || data.rating || "",
     images,
+    photoPath: data.photoPath || "",
+    photoURL: data.photoURL || "",
     createdAt: data.createdAt || null,
     updatedAt: data.updatedAt || null,
   };
@@ -270,20 +278,17 @@ export default function App() {
   useEffect(() => {
     const unsubscribers = [];
     const collectionMap = new Map();
-    let readyCount = 0;
+    let hasLoadedAtLeastOne = false;
 
     COLLECTION_CANDIDATES.forEach((collectionName) => {
-      const q = collection(db, collectionName);
-
       const unsub = onSnapshot(
-        q,
+        collection(db, collectionName),
         (snapshot) => {
           const rows = snapshot.docs.map((snap) =>
             normalizeEntry(snap.id, snap.data(), collectionName)
           );
 
           collectionMap.set(collectionName, rows);
-          readyCount += 1;
 
           const merged = [];
           collectionMap.forEach((items) => merged.push(...items));
@@ -295,12 +300,12 @@ export default function App() {
           });
 
           setEntries(sortEntriesNewest([...dedupedMap.values()]));
-          if (readyCount >= 1) setLoadingEntries(false);
+          hasLoadedAtLeastOne = true;
+          setLoadingEntries(false);
         },
         (error) => {
           console.warn(`Firestore read error in ${collectionName}:`, error);
-          readyCount += 1;
-          if (readyCount >= COLLECTION_CANDIDATES.length) {
+          if (!hasLoadedAtLeastOne) {
             setLoadingEntries(false);
           }
         }
@@ -309,9 +314,7 @@ export default function App() {
       unsubscribers.push(unsub);
     });
 
-    return () => {
-      unsubscribers.forEach((fn) => fn());
-    };
+    return () => unsubscribers.forEach((fn) => fn());
   }, []);
 
   useEffect(() => {
@@ -447,15 +450,23 @@ export default function App() {
           (item) => item.id === editingId && item.sourceCollection === editingCollection
         );
         const previousImages = Array.isArray(original?.images) ? original.images : [];
+
         await updateDoc(doc(db, editingCollection, editingId), {
           ...payload,
           images: [...previousImages, ...newUploads],
+          photos: [...previousImages, ...newUploads],
+          photoURL: [...previousImages, ...newUploads][0]?.url || "",
+          photoPath: [...previousImages, ...newUploads][0]?.path || "",
         });
       } else {
         await addDoc(collection(db, PRIMARY_COLLECTION), {
           ...payload,
           images: newUploads,
+          photos: newUploads,
+          photoURL: newUploads[0]?.url || "",
+          photoPath: newUploads[0]?.path || "",
           createdAt: serverTimestamp(),
+          createdAtMs: Date.now(),
         });
       }
 
@@ -510,6 +521,36 @@ export default function App() {
     }
   }
 
+  async function handleDeleteImage(item, imageIndex) {
+    const ok = window.confirm("Delete this photo?");
+    if (!ok) return;
+
+    try {
+      const currentImages = Array.isArray(item.images) ? [...item.images] : [];
+      const removedImage = currentImages[imageIndex];
+      const updatedImages = currentImages.filter((_, index) => index !== imageIndex);
+
+      if (removedImage?.path) {
+        try {
+          await deleteObject(ref(storage, removedImage.path));
+        } catch (err) {
+          console.warn("Storage image delete skipped:", err);
+        }
+      }
+
+      await updateDoc(doc(db, item.sourceCollection || PRIMARY_COLLECTION, item.id), {
+        images: updatedImages,
+        photos: updatedImages,
+        photoURL: updatedImages[0]?.url || "",
+        photoPath: updatedImages[0]?.path || "",
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      console.error("Delete image error:", error);
+      alert("Could not delete photo.");
+    }
+  }
+
   function openLightbox(images, index = 0) {
     if (!images?.length) return;
     setLightboxImages(images);
@@ -547,14 +588,14 @@ export default function App() {
               <div className="mb-2 text-[11px] uppercase tracking-[0.24em] text-[#8f816b]">
                 Daily Frame.
               </div>
-              <h1 className="text-[28px] font-semibold leading-none tracking-[-0.03em] text-[#4a4338]">
+              <h1 className="text-[24px] font-semibold leading-none tracking-[-0.03em] text-[#4a4338]">
                 Ride the day. Keep the moment.
               </h1>
               <p className="mt-2 text-[13px] text-[#7d7468]">
-                Ride  |  Café   | Life.
+                Ride | Café | Life
               </p>
             </div>
-           
+            
           </div>
 
           <div className="mt-4 flex gap-2">
@@ -582,9 +623,7 @@ export default function App() {
               <div className="text-[11px] uppercase tracking-[0.22em] text-[#8f816b]">
                 {editingId ? "Edit entry" : "New entry"}
               </div>
-              <div className="mt-1 text-[14px] text-[#6f675b]">
-                Capture first, polish later.
-              </div>
+              <div className="mt-1 text-[14px] text-[#6f675b]">Capture first, polish later.</div>
             </div>
             {editingId ? (
               <button
@@ -686,9 +725,7 @@ export default function App() {
             </div>
 
             <div>
-              <div className="mb-1.5 text-[11px] uppercase tracking-[0.18em] text-[#8f816b]">
-                Photos
-              </div>
+              <div className="mb-1.5 text-[11px] uppercase tracking-[0.18em] text-[#8f816b]">Photos</div>
               <div className="rounded-[22px] border border-dashed border-[#cfc6b7] bg-[#f6f2ea] p-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <button
@@ -699,9 +736,7 @@ export default function App() {
                     <ImageIcon size={14} />
                     Choose image
                   </button>
-                  <div className="text-[12px] text-[#7d7468]">
-                    Add one or several photos.
-                  </div>
+                  <div className="text-[12px] text-[#7d7468]">Add one or several photos.</div>
                 </div>
 
                 <input
@@ -716,7 +751,10 @@ export default function App() {
                 {pickedPreviews.length ? (
                   <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
                     {pickedPreviews.map((src, index) => (
-                      <div key={`${src}-${index}`} className="group relative overflow-hidden rounded-2xl border border-[#ddd4c7] bg-white">
+                      <div
+                        key={`${src}-${index}`}
+                        className="group relative overflow-hidden rounded-2xl border border-[#ddd4c7] bg-white"
+                      >
                         <img src={src} alt="preview" className="h-24 w-full object-cover" />
                         <button
                           type="button"
@@ -727,7 +765,7 @@ export default function App() {
                             setPickedFiles(nextFiles);
                             setPickedPreviews(nextPreviews);
                           }}
-                          className="absolute right-2 top-2 rounded-full bg-black/60 p-1 text-white opacity-90"
+                          className="absolute right-2 top-2 rounded-full bg-black/60 p-1 text-white opacity-95"
                         >
                           <X size={12} />
                         </button>
@@ -782,6 +820,7 @@ export default function App() {
                     item={row.item}
                     onEdit={() => handleEdit(row.item)}
                     onDelete={() => handleDelete(row.item)}
+                    onDeleteImage={handleDeleteImage}
                     onOpenLightbox={openLightbox}
                   />
                 );
@@ -797,11 +836,11 @@ export default function App() {
             <div className="rounded-[28px] border border-[#d9d2c5] bg-[#fbf8f1] p-4 shadow-[0_8px_24px_rgba(80,68,49,0.05)] sm:p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <div className="text-[11px] uppercase tracking-[0.22em] text-[#8f816b]">
-                    Monthly summary
-                  </div>
+                  <div className="text-[11px] uppercase tracking-[0.22em] text-[#8f816b]">Monthly summary</div>
                   <div className="mt-1 text-[18px] font-semibold tracking-[-0.02em] text-[#4a4338]">
-                    {availableMonths.length ? formatMonthLabel(selectedMonth) : formatMonthYear(getTodayLocalDate())}
+                    {availableMonths.length
+                      ? formatMonthLabel(selectedMonth)
+                      : formatMonthYear(getTodayLocalDate())}
                   </div>
                 </div>
 
@@ -865,9 +904,7 @@ export default function App() {
             </div>
 
             <div className="rounded-[28px] border border-[#d9d2c5] bg-[#fbf8f1] p-4 shadow-[0_8px_24px_rgba(80,68,49,0.05)] sm:p-5">
-              <div className="mb-3 text-[11px] uppercase tracking-[0.22em] text-[#8f816b]">
-                Entries in this month
-              </div>
+              <div className="mb-3 text-[11px] uppercase tracking-[0.22em] text-[#8f816b]">Entries in this month</div>
 
               {monthEntries.length ? (
                 <div className="space-y-3">
@@ -878,6 +915,7 @@ export default function App() {
                       compact
                       onEdit={() => handleEdit(item)}
                       onDelete={() => handleDelete(item)}
+                      onDeleteImage={handleDeleteImage}
                       onOpenLightbox={openLightbox}
                     />
                   ))}
@@ -931,7 +969,14 @@ export default function App() {
   );
 }
 
-function EntryCard({ item, onEdit, onDelete, onOpenLightbox, compact = false }) {
+function EntryCard({
+  item,
+  onEdit,
+  onDelete,
+  onDeleteImage,
+  onOpenLightbox,
+  compact = false,
+}) {
   const Icon = typeIcon(item.type);
   const images = Array.isArray(item.images) ? item.images : [];
 
@@ -948,9 +993,7 @@ function EntryCard({ item, onEdit, onDelete, onOpenLightbox, compact = false }) 
               {formatFullDate(item.date)}
             </span>
             {item.time ? (
-              <span className="text-[11px] uppercase tracking-[0.16em] text-[#938977]">
-                {item.time}
-              </span>
+              <span className="text-[11px] uppercase tracking-[0.16em] text-[#938977]">{item.time}</span>
             ) : null}
           </div>
 
@@ -990,21 +1033,31 @@ function EntryCard({ item, onEdit, onDelete, onOpenLightbox, compact = false }) 
       {images.length ? (
         <div className={classNames("mt-4 grid gap-2", compact ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-3")}>
           {images.map((image, index) => (
-            <button
-              key={`${image.url}-${index}`}
-              type="button"
-              onClick={() => onOpenLightbox(images, index)}
-              className="overflow-hidden rounded-[20px] border border-[#ddd4c7] bg-white text-left"
-            >
-              <img
-                src={image.url}
-                alt={image.name || item.title || "entry image"}
-                className={classNames(
-                  "w-full object-cover transition hover:scale-[1.02]",
-                  compact ? "h-24" : "h-40"
-                )}
-              />
-            </button>
+            <div key={`${image.url}-${index}`} className="group relative">
+              <button
+                type="button"
+                onClick={() => onOpenLightbox(images, index)}
+                className="block w-full overflow-hidden rounded-[20px] border border-[#ddd4c7] bg-white text-left"
+              >
+                <img
+                  src={image.url}
+                  alt={image.name || item.title || "entry image"}
+                  className={classNames(
+                    "w-full object-cover transition duration-200 hover:scale-[1.02]",
+                    compact ? "h-24" : "h-40"
+                  )}
+                />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onDeleteImage(item, index)}
+                className="absolute right-2 top-2 rounded-full bg-black/60 p-1.5 text-white opacity-100 shadow-sm transition sm:opacity-0 sm:group-hover:opacity-100"
+                aria-label="Delete image"
+              >
+                <X size={12} />
+              </button>
+            </div>
           ))}
         </div>
       ) : null}
