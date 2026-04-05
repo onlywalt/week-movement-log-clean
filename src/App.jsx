@@ -16,6 +16,8 @@ import {
   Loader2,
   ChevronLeft,
   ChevronRight,
+  Star,
+  Printer,
 } from "lucide-react";
 import {
   addDoc,
@@ -148,6 +150,7 @@ function buildMonthStats(entries) {
     Journal: 0,
     minutes: 0,
     photos: 0,
+    favorites: 0,
   };
 
   entries.forEach((item) => {
@@ -155,9 +158,25 @@ function buildMonthStats(entries) {
     const mins = Number(item.duration || 0);
     if (!Number.isNaN(mins)) stats.minutes += mins;
     stats.photos += Array.isArray(item.images) ? item.images.length : 0;
+    if (item.favorite) stats.favorites += 1;
   });
 
   return stats;
+}
+
+function buildTypeCounts(entries) {
+  return entries.reduce(
+    (acc, item) => {
+      if (acc[item.type] !== undefined) acc[item.type] += 1;
+      return acc;
+    },
+    {
+      Ride: 0,
+      Walk: 0,
+      Cafe: 0,
+      Journal: 0,
+    }
+  );
 }
 
 function getMonthRange(monthOffset = 0) {
@@ -254,6 +273,7 @@ function normalizeEntry(id, data, sourceCollection) {
     images,
     photoPath: data.photoPath || "",
     photoURL: data.photoURL || "",
+    favorite: Boolean(data.favorite),
     createdAt: data.createdAt || null,
     updatedAt: data.updatedAt || null,
   };
@@ -266,6 +286,7 @@ export default function App() {
   const [uploading, setUploading] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [selectedTab, setSelectedTab] = useState("Journal");
+  const [activeTypeFilter, setActiveTypeFilter] = useState("All");
   const [editingId, setEditingId] = useState(null);
   const [editingCollection, setEditingCollection] = useState(PRIMARY_COLLECTION);
   const [pickedFiles, setPickedFiles] = useState([]);
@@ -323,11 +344,18 @@ export default function App() {
     };
   }, [pickedPreviews]);
 
+  const typeCounts = useMemo(() => buildTypeCounts(entries), [entries]);
+
+  const filteredJournalEntries = useMemo(() => {
+    if (activeTypeFilter === "All") return entries;
+    return entries.filter((item) => item.type === activeTypeFilter);
+  }, [entries, activeTypeFilter]);
+
   const groupedEntries = useMemo(() => {
     const groups = [];
     let lastMonth = "";
 
-    entries.forEach((item) => {
+    filteredJournalEntries.forEach((item) => {
       const monthKey = formatMonthKey(item.date);
       if (monthKey !== lastMonth) {
         groups.push({ type: "month", key: monthKey, label: formatMonthLabel(monthKey) });
@@ -337,7 +365,7 @@ export default function App() {
     });
 
     return groups;
-  }, [entries]);
+  }, [filteredJournalEntries]);
 
   const monthEntries = useMemo(() => {
     return entries.filter((item) => formatMonthKey(item.date) === selectedMonth);
@@ -355,6 +383,15 @@ export default function App() {
     return arr.sort((a, b) => b.key.localeCompare(a.key));
   }, [entries]);
 
+  const favoriteEntries = useMemo(() => {
+    return entries.filter((item) => item.favorite);
+  }, [entries]);
+
+  const activeFilterCount = useMemo(() => {
+    if (activeTypeFilter === "All") return entries.length;
+    return typeCounts[activeTypeFilter] || 0;
+  }, [activeTypeFilter, entries.length, typeCounts]);
+
   useEffect(() => {
     if (!availableMonths.length) return;
     const exists = availableMonths.some((m) => m.key === selectedMonth);
@@ -367,6 +404,15 @@ export default function App() {
 
   function setType(type) {
     setForm((prev) => ({ ...prev, type }));
+  }
+
+  function toggleTypeFilter(type, jumpToJournal = false) {
+    setActiveTypeFilter((prev) => (prev === type ? "All" : type));
+    if (jumpToJournal) setSelectedTab("Journal");
+  }
+
+  function clearFilter() {
+    setActiveTypeFilter("All");
   }
 
   function clearForm() {
@@ -465,6 +511,7 @@ export default function App() {
           photos: newUploads,
           photoURL: newUploads[0]?.url || "",
           photoPath: newUploads[0]?.path || "",
+          favorite: false,
           createdAt: serverTimestamp(),
           createdAtMs: Date.now(),
         });
@@ -551,6 +598,18 @@ export default function App() {
     }
   }
 
+  async function handleToggleFavorite(item) {
+    try {
+      await updateDoc(doc(db, item.sourceCollection || PRIMARY_COLLECTION, item.id), {
+        favorite: !item.favorite,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      console.error("Favorite toggle error:", error);
+      alert("Could not update favorite.");
+    }
+  }
+
   function openLightbox(images, index = 0) {
     if (!images?.length) return;
     setLightboxImages(images);
@@ -570,10 +629,48 @@ export default function App() {
     setLightboxIndex((prev) => (prev - 1 + lightboxImages.length) % lightboxImages.length);
   }
 
+  function handlePrintFavorites() {
+    if (!favoriteEntries.length) {
+      alert("No favorite entries yet.");
+      return;
+    }
+    window.print();
+  }
+
   return (
     <div className="min-h-screen bg-[#f3f0e8] text-[#2f2d29]">
+      <style>{`
+        .print-card-4x6 {
+          width: 4in;
+          height: 6in;
+        }
+
+        @media print {
+          body {
+            background: white !important;
+          }
+
+          .no-print {
+            display: none !important;
+          }
+
+          .print-only {
+            display: block !important;
+          }
+
+          .print-sheet {
+            display: block !important;
+          }
+
+          @page {
+            size: auto;
+            margin: 0.35in;
+          }
+        }
+      `}</style>
+
       <div
-        className="pointer-events-none fixed inset-0 opacity-[0.07]"
+        className="pointer-events-none fixed inset-0 opacity-[0.07] no-print"
         style={{
           backgroundImage:
             "radial-gradient(circle at 1px 1px, rgba(47,45,41,0.7) 1px, transparent 0)",
@@ -581,7 +678,7 @@ export default function App() {
         }}
       />
 
-      <div className="relative mx-auto max-w-3xl px-4 pb-24 pt-5 sm:px-6">
+      <div className="relative mx-auto max-w-3xl px-4 pb-24 pt-5 sm:px-6 no-print">
         <header className="mb-5 rounded-[28px] border border-[#d9d2c5] bg-[#f7f4ed]/95 px-5 py-5 shadow-[0_10px_30px_rgba(80,68,49,0.06)] backdrop-blur">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -595,11 +692,10 @@ export default function App() {
                 Ride | Café | Life
               </p>
             </div>
-            
           </div>
 
-          <div className="mt-4 flex gap-2">
-            {["Journal", "Summary"].map((tab) => (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {["Journal", "Summary", "Print Cards"].map((tab) => (
               <button
                 key={tab}
                 type="button"
@@ -623,7 +719,7 @@ export default function App() {
               <div className="text-[11px] uppercase tracking-[0.22em] text-[#8f816b]">
                 {editingId ? "Edit entry" : "New entry"}
               </div>
-              <div className="mt-1 text-[14px] text-[#6f675b]">Capture first, polish later.</div>
+              <div className="mt-1 text-[14px] text-[#6f675b]">v 1.5</div>
             </div>
             {editingId ? (
               <button
@@ -652,6 +748,7 @@ export default function App() {
                 >
                   <Icon size={14} />
                   <span>{label}</span>
+                  <span className="text-[12px] opacity-75">{typeCounts[label]}</span>
                 </button>
               ))}
             </div>
@@ -798,6 +895,49 @@ export default function App() {
 
         {selectedTab === "Journal" ? (
           <section className="space-y-3">
+            {!loadingEntries ? (
+              <div className="rounded-[24px] border border-[#d9d2c5] bg-[#fbf8f1] p-3 shadow-[0_8px_24px_rgba(80,68,49,0.04)]">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={clearFilter}
+                    className={classNames(
+                      "rounded-full border px-3 py-2 text-[13px] transition",
+                      activeTypeFilter === "All"
+                        ? "border-[#8f816b] bg-[#8f816b] text-white"
+                        : "border-[#d7d0c3] bg-white text-[#665e53] hover:bg-[#f0ebe2]"
+                    )}
+                  >
+                    All {entries.length}
+                  </button>
+
+                  {ENTRY_TYPES.map(({ label, icon: Icon }) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => toggleTypeFilter(label)}
+                      className={classNames(
+                        "inline-flex items-center gap-2 rounded-full border px-3 py-2 text-[13px] transition",
+                        activeTypeFilter === label
+                          ? "border-[#8f816b] bg-[#8f816b] text-white"
+                          : "border-[#d7d0c3] bg-white text-[#665e53] hover:bg-[#f0ebe2]"
+                      )}
+                    >
+                      <Icon size={13} />
+                      <span>{label}</span>
+                      <span className="opacity-80">{typeCounts[label]}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-3 text-[12px] uppercase tracking-[0.16em] text-[#8f816b]">
+                  {activeTypeFilter === "All"
+                    ? `Showing all · ${entries.length} entries`
+                    : `Showing ${activeTypeFilter} · ${activeFilterCount} entries`}
+                </div>
+              </div>
+            ) : null}
+
             {loadingEntries ? (
               <div className="rounded-[28px] border border-[#d9d2c5] bg-[#fbf8f1] p-6 text-[14px] text-[#6f675b]">
                 Loading your journal…
@@ -818,20 +958,24 @@ export default function App() {
                   <EntryCard
                     key={row.key}
                     item={row.item}
+                    typeCount={typeCounts[row.item.type] || 0}
+                    activeTypeFilter={activeTypeFilter}
+                    onFilterType={toggleTypeFilter}
                     onEdit={() => handleEdit(row.item)}
                     onDelete={() => handleDelete(row.item)}
                     onDeleteImage={handleDeleteImage}
                     onOpenLightbox={openLightbox}
+                    onToggleFavorite={handleToggleFavorite}
                   />
                 );
               })
             ) : (
               <div className="rounded-[28px] border border-[#d9d2c5] bg-[#fbf8f1] p-6 text-[14px] text-[#6f675b]">
-                No entries yet. Start with a ride, walk, cafe, or small journal note.
+                No entries for this filter yet.
               </div>
             )}
           </section>
-        ) : (
+        ) : selectedTab === "Summary" ? (
           <section className="space-y-4">
             <div className="rounded-[28px] border border-[#d9d2c5] bg-[#fbf8f1] p-4 shadow-[0_8px_24px_rgba(80,68,49,0.05)] sm:p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -896,6 +1040,7 @@ export default function App() {
                 <StatCard label="Cafes" value={monthStats.Cafe} icon={Coffee} />
                 <StatCard label="Journal" value={monthStats.Journal} icon={BookOpen} />
                 <StatCard label="Photos" value={monthStats.photos} icon={Camera} />
+                <StatCard label="Favorites" value={monthStats.favorites} icon={Star} />
               </div>
 
               <div className="mt-3 rounded-[22px] border border-[#e0d9cc] bg-[#f5f1e8] px-4 py-3 text-[13px] text-[#645d52]">
@@ -913,10 +1058,14 @@ export default function App() {
                       key={`${item.sourceCollection}-${item.id}`}
                       item={item}
                       compact
+                      typeCount={typeCounts[item.type] || 0}
+                      activeTypeFilter={activeTypeFilter}
+                      onFilterType={toggleTypeFilter}
                       onEdit={() => handleEdit(item)}
                       onDelete={() => handleDelete(item)}
                       onDeleteImage={handleDeleteImage}
                       onOpenLightbox={openLightbox}
+                      onToggleFavorite={handleToggleFavorite}
                     />
                   ))}
                 </div>
@@ -925,11 +1074,58 @@ export default function App() {
               )}
             </div>
           </section>
+        ) : (
+          <section className="space-y-4">
+            <div className="rounded-[28px] border border-[#d9d2c5] bg-[#fbf8f1] p-4 shadow-[0_8px_24px_rgba(80,68,49,0.05)] sm:p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.22em] text-[#8f816b]">Print cards</div>
+                  <div className="mt-1 text-[18px] font-semibold tracking-[-0.02em] text-[#4a4338]">
+                    Favorite entries
+                  </div>
+                  <p className="mt-2 text-[13px] text-[#6f675b]">
+                    Mark the entries you like with the star, then print them as 4x6 cards.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handlePrintFavorites}
+                  disabled={!favoriteEntries.length}
+                  className="inline-flex items-center gap-2 rounded-full bg-[#8f816b] px-4 py-2.5 text-[13px] font-medium text-white transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Printer size={15} />
+                  Print favorite cards
+                </button>
+              </div>
+
+              <div className="mt-4 rounded-[22px] border border-[#e0d9cc] bg-[#f5f1e8] px-4 py-3 text-[13px] text-[#645d52]">
+                Favorites selected: <span className="font-semibold text-[#4a4338]">{favoriteEntries.length}</span>
+              </div>
+            </div>
+
+            {favoriteEntries.length ? (
+              <div className="rounded-[28px] border border-[#d9d2c5] bg-[#fbf8f1] p-4 shadow-[0_8px_24px_rgba(80,68,49,0.05)] sm:p-5">
+                <div className="mb-4 text-[11px] uppercase tracking-[0.22em] text-[#8f816b]">
+                  Card preview
+                </div>
+                <PrintCardSheet4x6 entries={favoriteEntries} />
+              </div>
+            ) : (
+              <div className="rounded-[28px] border border-[#d9d2c5] bg-[#fbf8f1] p-6 text-[14px] text-[#6f675b]">
+                No favorite entries yet. Tap the star on any entry first.
+              </div>
+            )}
+          </section>
         )}
       </div>
 
+      <div className="hidden print-sheet print-only">
+        <PrintCardSheet4x6 entries={favoriteEntries} />
+      </div>
+
       {lightboxImages.length ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 no-print">
           <button
             type="button"
             onClick={closeLightbox}
@@ -971,27 +1167,53 @@ export default function App() {
 
 function EntryCard({
   item,
+  typeCount,
+  activeTypeFilter,
+  onFilterType,
   onEdit,
   onDelete,
   onDeleteImage,
   onOpenLightbox,
+  onToggleFavorite,
   compact = false,
 }) {
   const Icon = typeIcon(item.type);
   const images = Array.isArray(item.images) ? item.images : [];
+  const isActiveType = activeTypeFilter === item.type;
 
   return (
     <article className="rounded-[28px] border border-[#d9d2c5] bg-[#fbf8f1] p-4 shadow-[0_8px_24px_rgba(80,68,49,0.05)] sm:p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1 rounded-full border border-[#d8d1c4] bg-[#f3eee5] px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] text-[#8f816b]">
+            <button
+              type="button"
+              onClick={() => onFilterType(item.type, true)}
+              className={classNames(
+                "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] transition",
+                isActiveType
+                  ? "border-[#8f816b] bg-[#8f816b] text-white"
+                  : "border-[#d8d1c4] bg-[#f3eee5] text-[#8f816b] hover:bg-[#ece5d9]"
+              )}
+            >
               <Icon size={12} />
-              {item.type || "Entry"}
-            </span>
+              <span>{item.type || "Entry"}</span>
+              <span className={classNames("opacity-80", isActiveType ? "text-white" : "text-[#7f735f]")}>
+                {typeCount}
+              </span>
+            </button>
+
+            {item.favorite ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-[#d7c796] bg-[#f6ecd0] px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] text-[#8b7440]">
+                <Star size={11} fill="currentColor" />
+                Favorite
+              </span>
+            ) : null}
+
             <span className="text-[11px] uppercase tracking-[0.16em] text-[#938977]">
               {formatFullDate(item.date)}
             </span>
+
             {item.time ? (
               <span className="text-[11px] uppercase tracking-[0.16em] text-[#938977]">{item.time}</span>
             ) : null}
@@ -1011,11 +1233,26 @@ function EntryCard({
         <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
+            onClick={() => onToggleFavorite(item)}
+            className={classNames(
+              "rounded-full border p-2 transition",
+              item.favorite
+                ? "border-[#d7c796] bg-[#f6ecd0] text-[#8b7440]"
+                : "border-[#d7d0c3] text-[#665e53] hover:bg-[#f0ebe2]"
+            )}
+            aria-label={item.favorite ? "Remove favorite" : "Add favorite"}
+          >
+            <Star size={15} fill={item.favorite ? "currentColor" : "none"} />
+          </button>
+
+          <button
+            type="button"
             onClick={onEdit}
             className="rounded-full border border-[#d7d0c3] p-2 text-[#665e53] hover:bg-[#f0ebe2]"
           >
             <Pencil size={15} />
           </button>
+
           <button
             type="button"
             onClick={onDelete}
@@ -1125,14 +1362,6 @@ function StatCard({ label, value, icon: Icon }) {
   );
 }
 
-// 4x6 printable Polaroid-style card
-// Use inside a print view later, for example:
-// <PrintCard4x6
-//   title="Don Valley loop"
-//   date="2026-04-04"
-//   place="Toronto"
-//   imageUrl={entry.images?.[0]?.url}
-// />
 export function PrintCard4x6({
   title = "Untitled",
   date = "",
@@ -1145,7 +1374,7 @@ export function PrintCard4x6({
   return (
     <div className="print-card-4x6 mx-auto bg-[#f4efe6] text-[#4a4338] shadow-[0_6px_18px_rgba(0,0,0,0.08)]">
       <div className="h-full w-full border border-[#e6dfd3] bg-[#f4efe6] p-[0.18in]">
-        <div className="h-full w-full flex flex-col">
+        <div className="flex h-full w-full flex-col">
           <div className="bg-white p-[0.08in] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.03)]">
             <div className="aspect-[1/1] w-full overflow-hidden bg-[#ebe6dd]">
               {imageUrl ? (
@@ -1179,7 +1408,7 @@ export function PrintCard4x6({
 export function PrintCardSheet4x6({ entries = [] }) {
   return (
     <div className="bg-white p-6 print:p-0">
-      <div className="mx-auto grid max-w-[8.5in] grid-cols-1 gap-6 justify-items-center print:max-w-none print:gap-[0.15in]">
+      <div className="mx-auto grid max-w-[8.5in] grid-cols-1 justify-items-center gap-6 print:max-w-none print:gap-[0.15in]">
         {entries.map((entry) => (
           <PrintCard4x6
             key={`${entry.sourceCollection || "entry"}-${entry.id}`}
@@ -1205,4 +1434,3 @@ function formatPrintDate(dateStr) {
     year: "numeric",
   });
 }
-
