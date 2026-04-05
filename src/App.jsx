@@ -551,12 +551,10 @@ export default function App() {
                 Ride the day. Keep the moment.
               </h1>
               <p className="mt-2 text-[13px] text-[#7d7468]">
-                Quick to log on the phone. Calm to browse later.
+                Ride  |  Café   | Life.
               </p>
             </div>
-            <div className="hidden rounded-full border border-[#dad3c7] bg-[#f2ede4] px-3 py-1.5 text-[11px] uppercase tracking-[0.18em] text-[#8f816b] sm:block">
-              Firebase sync
-            </div>
+           
           </div>
 
           <div className="mt-4 flex gap-2">
