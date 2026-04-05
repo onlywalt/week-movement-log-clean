@@ -45,6 +45,18 @@ const ENTRY_TYPES = [
 
 const MOVEMENT_TYPES = ["Ride", "Walk"];
 
+// Put your OLD collection name first.
+// This version will read from any of these if they exist,
+// but all NEW saves go into the first one.
+const COLLECTION_CANDIDATES = [
+  "entries",
+  "daily-frame-entries",
+  "week-movement-log",
+  "dailyFrameEntries",
+];
+
+const PRIMARY_COLLECTION = COLLECTION_CANDIDATES[0];
+
 const EMPTY_FORM = {
   type: "Ride",
   title: "",
@@ -164,6 +176,89 @@ function getMonthRange(monthOffset = 0) {
   return `${dt.getFullYear()}-${`${dt.getMonth() + 1}`.padStart(2, "0")}`;
 }
 
+function normalizeOldImages(raw) {
+  if (!raw) return [];
+
+  if (Array.isArray(raw)) {
+    return raw
+      .map((img, index) => {
+        if (typeof img === "string") {
+          return {
+            url: img,
+            name: `image-${index + 1}`,
+            path: "",
+          };
+        }
+
+        if (img && typeof img === "object") {
+          return {
+            url: img.url || img.downloadURL || img.src || img.photoURL || "",
+            name: img.name || `image-${index + 1}`,
+            path: img.path || img.fullPath || "",
+          };
+        }
+
+        return null;
+      })
+      .filter((img) => img?.url);
+  }
+
+  if (typeof raw === "string") {
+    return [{ url: raw, name: "image-1", path: "" }];
+  }
+
+  if (typeof raw === "object") {
+    const url = raw.url || raw.downloadURL || raw.src || raw.photoURL;
+    return url ? [{ url, name: raw.name || "image-1", path: raw.path || raw.fullPath || "" }] : [];
+  }
+
+  return [];
+}
+
+function normalizeType(rawType) {
+  if (!rawType) return "Journal";
+  const t = String(rawType).trim().toLowerCase();
+  if (t === "ride") return "Ride";
+  if (t === "walk") return "Walk";
+  if (t === "cafe" || t === "coffee") return "Cafe";
+  if (t === "journal" || t === "note" || t === "notes") return "Journal";
+  return "Journal";
+}
+
+function normalizeEntry(id, data, sourceCollection) {
+  const date =
+    data.date ||
+    data.entryDate ||
+    data.createdDate ||
+    getTodayLocalDate();
+
+  const time =
+    data.time ||
+    data.entryTime ||
+    data.createdTime ||
+    "";
+
+  const images = normalizeOldImages(
+    data.images ?? data.photos ?? data.photo ?? data.image ?? data.imageUrls ?? []
+  );
+
+  return {
+    id,
+    sourceCollection,
+    type: normalizeType(data.type || data.category || data.activityType),
+    title: data.title || data.name || data.label || "",
+    note: data.note || data.notes || data.description || "",
+    date,
+    time,
+    place: data.place || data.location || data.cafe || "",
+    duration: data.duration || data.minutes || "",
+    cafeRating: data.cafeRating || data.rating || "",
+    images,
+    createdAt: data.createdAt || null,
+    updatedAt: data.updatedAt || null,
+  };
+}
+
 export default function App() {
   const [entries, setEntries] = useState([]);
   const [loadingEntries, setLoadingEntries] = useState(true);
@@ -172,6 +267,7 @@ export default function App() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [selectedTab, setSelectedTab] = useState("Journal");
   const [editingId, setEditingId] = useState(null);
+  const [editingCollection, setEditingCollection] = useState(PRIMARY_COLLECTION);
   const [pickedFiles, setPickedFiles] = useState([]);
   const [pickedPreviews, setPickedPreviews] = useState([]);
   const [lightboxImages, setLightboxImages] = useState([]);
@@ -180,22 +276,50 @@ export default function App() {
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    const q = query(collection(db, "daily-frame-entries"), orderBy("date", "desc"));
+    const unsubscribers = [];
+    const collectionMap = new Map();
+    let readyCount = 0;
 
-    const unsub = onSnapshot(
-      q,
-      (snapshot) => {
-        const rows = snapshot.docs.map((snap) => ({ id: snap.id, ...snap.data() }));
-        setEntries(sortEntriesNewest(rows));
-        setLoadingEntries(false);
-      },
-      (error) => {
-        console.error("Firestore read error:", error);
-        setLoadingEntries(false);
-      }
-    );
+    COLLECTION_CANDIDATES.forEach((collectionName) => {
+      const q = query(collection(db, collectionName), orderBy("date", "desc"));
 
-    return () => unsub();
+      const unsub = onSnapshot(
+        q,
+        (snapshot) => {
+          const rows = snapshot.docs.map((snap) =>
+            normalizeEntry(snap.id, snap.data(), collectionName)
+          );
+
+          collectionMap.set(collectionName, rows);
+          readyCount += 1;
+
+          const merged = [];
+          collectionMap.forEach((items) => merged.push(...items));
+
+          const dedupedMap = new Map();
+          merged.forEach((item) => {
+            const key = `${item.sourceCollection}:${item.id}`;
+            dedupedMap.set(key, item);
+          });
+
+          setEntries(sortEntriesNewest([...dedupedMap.values()]));
+          if (readyCount >= 1) setLoadingEntries(false);
+        },
+        (error) => {
+          console.warn(`Firestore read error in ${collectionName}:`, error);
+          readyCount += 1;
+          if (readyCount >= COLLECTION_CANDIDATES.length) {
+            setLoadingEntries(false);
+          }
+        }
+      );
+
+      unsubscribers.push(unsub);
+    });
+
+    return () => {
+      unsubscribers.forEach((fn) => fn());
+    };
   }, []);
 
   useEffect(() => {
@@ -214,7 +338,7 @@ export default function App() {
         groups.push({ type: "month", key: monthKey, label: formatMonthLabel(monthKey) });
         lastMonth = monthKey;
       }
-      groups.push({ type: "entry", key: item.id, item });
+      groups.push({ type: "entry", key: `${item.sourceCollection}-${item.id}`, item });
     });
 
     return groups;
@@ -258,6 +382,7 @@ export default function App() {
       time: getNowLocalTime(),
     });
     setEditingId(null);
+    setEditingCollection(PRIMARY_COLLECTION);
     clearPickedImages();
   }
 
@@ -326,14 +451,16 @@ export default function App() {
       };
 
       if (editingId) {
-        const original = entries.find((item) => item.id === editingId);
+        const original = entries.find(
+          (item) => item.id === editingId && item.sourceCollection === editingCollection
+        );
         const previousImages = Array.isArray(original?.images) ? original.images : [];
-        await updateDoc(doc(db, "daily-frame-entries", editingId), {
+        await updateDoc(doc(db, editingCollection, editingId), {
           ...payload,
           images: [...previousImages, ...newUploads],
         });
       } else {
-        await addDoc(collection(db, "daily-frame-entries"), {
+        await addDoc(collection(db, PRIMARY_COLLECTION), {
           ...payload,
           images: newUploads,
           createdAt: serverTimestamp(),
@@ -352,6 +479,7 @@ export default function App() {
 
   function handleEdit(item) {
     setEditingId(item.id);
+    setEditingCollection(item.sourceCollection || PRIMARY_COLLECTION);
     setForm({
       type: item.type || "Ride",
       title: item.title || "",
@@ -383,7 +511,7 @@ export default function App() {
         }
       }
 
-      await deleteDoc(doc(db, "daily-frame-entries", item.id));
+      await deleteDoc(doc(db, item.sourceCollection || PRIMARY_COLLECTION, item.id));
     } catch (error) {
       console.error("Delete error:", error);
       alert("Could not delete entry.");
@@ -755,7 +883,7 @@ export default function App() {
                 <div className="space-y-3">
                   {monthEntries.map((item) => (
                     <EntryCard
-                      key={item.id}
+                      key={`${item.sourceCollection}-${item.id}`}
                       item={item}
                       compact
                       onEdit={() => handleEdit(item)}
@@ -870,7 +998,7 @@ function EntryCard({ item, onEdit, onDelete, onOpenLightbox, compact = false }) 
       ) : null}
 
       {images.length ? (
-        <div className={classNames("mt-4 grid gap-2", compact ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-3") }>
+        <div className={classNames("mt-4 grid gap-2", compact ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-3")}>
           {images.map((image, index) => (
             <button
               key={`${image.url}-${index}`}
