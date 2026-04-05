@@ -47,7 +47,7 @@ const MOVEMENT_TYPES = ["Ride", "Walk"];
 // This version will read from any of these if they exist,
 // but all NEW saves go into the first one.
 const COLLECTION_CANDIDATES = ["daily-frame"];
-const PRIMARY_COLLECTION = "daily-frame";
+const PRIMARY_COLLECTION = "daily-frames";
 
 const EMPTY_FORM = {
   type: "Ride",
